@@ -1,0 +1,11 @@
+/home/arch/Documents/MO-VM/rust-hypervisor/target/debug/deps/virtio_queue-1cba9f30ee86b2e8.d: /home/arch/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/virtio-queue-0.10.0/src/lib.rs /home/arch/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/virtio-queue-0.10.0/src/defs.rs /home/arch/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/virtio-queue-0.10.0/src/chain.rs /home/arch/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/virtio-queue-0.10.0/src/descriptor.rs /home/arch/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/virtio-queue-0.10.0/src/queue.rs /home/arch/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/virtio-queue-0.10.0/src/queue_sync.rs /home/arch/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/virtio-queue-0.10.0/src/state.rs
+
+/home/arch/Documents/MO-VM/rust-hypervisor/target/debug/deps/libvirtio_queue-1cba9f30ee86b2e8.rmeta: /home/arch/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/virtio-queue-0.10.0/src/lib.rs /home/arch/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/virtio-queue-0.10.0/src/defs.rs /home/arch/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/virtio-queue-0.10.0/src/chain.rs /home/arch/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/virtio-queue-0.10.0/src/descriptor.rs /home/arch/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/virtio-queue-0.10.0/src/queue.rs /home/arch/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/virtio-queue-0.10.0/src/queue_sync.rs /home/arch/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/virtio-queue-0.10.0/src/state.rs
+
+/home/arch/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/virtio-queue-0.10.0/src/lib.rs:
+/home/arch/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/virtio-queue-0.10.0/src/defs.rs:
+/home/arch/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/virtio-queue-0.10.0/src/chain.rs:
+/home/arch/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/virtio-queue-0.10.0/src/descriptor.rs:
+/home/arch/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/virtio-queue-0.10.0/src/queue.rs:
+/home/arch/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/virtio-queue-0.10.0/src/queue_sync.rs:
+/home/arch/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/virtio-queue-0.10.0/src/state.rs:

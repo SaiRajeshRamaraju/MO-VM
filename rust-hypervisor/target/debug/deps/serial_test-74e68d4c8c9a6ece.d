@@ -1,0 +1,11 @@
+/home/arch/Documents/MO-VM/rust-hypervisor/target/debug/deps/serial_test-74e68d4c8c9a6ece.d: /home/arch/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serial_test-2.0.0/src/lib.rs /home/arch/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serial_test-2.0.0/src/code_lock.rs /home/arch/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serial_test-2.0.0/src/parallel_code_lock.rs /home/arch/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serial_test-2.0.0/src/rwlock.rs /home/arch/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serial_test-2.0.0/src/serial_code_lock.rs
+
+/home/arch/Documents/MO-VM/rust-hypervisor/target/debug/deps/libserial_test-74e68d4c8c9a6ece.rlib: /home/arch/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serial_test-2.0.0/src/lib.rs /home/arch/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serial_test-2.0.0/src/code_lock.rs /home/arch/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serial_test-2.0.0/src/parallel_code_lock.rs /home/arch/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serial_test-2.0.0/src/rwlock.rs /home/arch/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serial_test-2.0.0/src/serial_code_lock.rs
+
+/home/arch/Documents/MO-VM/rust-hypervisor/target/debug/deps/libserial_test-74e68d4c8c9a6ece.rmeta: /home/arch/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serial_test-2.0.0/src/lib.rs /home/arch/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serial_test-2.0.0/src/code_lock.rs /home/arch/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serial_test-2.0.0/src/parallel_code_lock.rs /home/arch/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serial_test-2.0.0/src/rwlock.rs /home/arch/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serial_test-2.0.0/src/serial_code_lock.rs
+
+/home/arch/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serial_test-2.0.0/src/lib.rs:
+/home/arch/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serial_test-2.0.0/src/code_lock.rs:
+/home/arch/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serial_test-2.0.0/src/parallel_code_lock.rs:
+/home/arch/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serial_test-2.0.0/src/rwlock.rs:
+/home/arch/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serial_test-2.0.0/src/serial_code_lock.rs:
