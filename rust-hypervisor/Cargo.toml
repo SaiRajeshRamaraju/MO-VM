@@ -24,7 +24,7 @@ simplelog = "0.12"
 anyhow = "1.0"
 thiserror = "1.0"
 bytes = "1.0"
-goblin = "0.6.0"
+goblin = "0.8.0"
 clap = { version = "4.0", features = ["derive"] }
 vm-memory = { version = "0.11.0", features = ["backend-mmap"] }
 bitflags = "2.0"
@@ -40,8 +40,9 @@ tempfile = "3.2"
 virtio-queue = "0.10.0"
 virtio-bindings = "0.2.6"
 event-manager = "0.4.2"
-vhost = { version = "0.8.0" }
+vhost = { version = "0.15.0" }
 vhost-user-backend = "0.11.0"
-
+tokio = { version = "1.0", features = ["full"] }
+vmm-sys-util = "0.14.0"
 [dev-dependencies]
 serial_test = "2.0"

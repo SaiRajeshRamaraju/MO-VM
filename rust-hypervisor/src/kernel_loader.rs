@@ -1,10 +1,9 @@
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
-
 use log::{info};
 use vm_memory::{Bytes, GuestAddress, GuestMemory};
-
+use goblin::elf::Elf;
 use crate::error::{HypervisorError, Result};
 
 // Linux kernel header magic number
@@ -43,7 +42,7 @@ impl KernelLoader {
             cmdline: String::new(),
         }
     }
-
+    // Load the kernel form the specified path into the guest memory in real mode
     pub fn load_kernel<M: GuestMemory>(
         &mut self,
         memory: &M,

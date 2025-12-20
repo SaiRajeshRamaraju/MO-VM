@@ -2,7 +2,19 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 use std::time::Duration;
 use std::thread;
-use std::os::unix::io::AsRawFd;
+
+use kvm_ioctls::{Kvm, VmFd};
+use log::{debug, error, info};
+use tokio::sync::{broadcast, mpsc, oneshot};
+use vhost::vhost_user::message::VhostUserMemoryRegion;
+use vm_memory::{GuestAddress, GuestMemory, Address};
+use vmm_sys_util::eventfd::EventFd;
+
+use crate::error::{HypervisorError, Result};
+use crate::vcpu::Vcpu;
+use crate::memory::{GuestMemoryRegions, setup_guest_memory};
+use crate::virtio::VirtioDevice;
+use crate::snapshot::SnapshotManager;
 
 // Helper function to clone a VmFd
 fn clone_vmfd(vm_fd: &VmFd) -> Result<VmFd> {
@@ -25,18 +37,6 @@ fn clone_vmfd(vm_fd: &VmFd) -> Result<VmFd> {
     Ok(new_vm)
 }
 
-use kvm_ioctls::{Kvm, VmFd};
-use log::{debug, error, info};
-use tokio::sync::{broadcast, mpsc, oneshot};
-use vhost::vhost_user::message::VhostUserMemoryRegion;
-use vm_memory::{GuestAddress, GuestMemory, Address};
-use vmm_sys_util::eventfd::EventFd;
-
-use crate::error::{HypervisorError, Result};
-use crate::vcpu::Vcpu;
-use crate::memory::{GuestMemoryRegions, setup_guest_memory};
-use crate::virtio::VirtioDevice;
-use crate::snapshot::SnapshotManager;
 
 // Message type for communication between threads
 enum VmMessage {

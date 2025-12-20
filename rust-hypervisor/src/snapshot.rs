@@ -1,7 +1,6 @@
 use std::fmt;
 use std::path::Path;
 use std::sync::Arc;
-
 use serde::{
     de::{self, Deserialize, Deserializer, MapAccess, Visitor},
     ser::{Serialize, Serializer, SerializeStruct, SerializeSeq},
@@ -27,7 +26,7 @@ where
                 .map_err(|e| serde::ser::Error::custom(e))?;
         };
     }
-    
+   // Serialize each of the kvm regs ?But why
     serialize_field!(state, rax);
     serialize_field!(state, rbx);
     serialize_field!(state, rcx);

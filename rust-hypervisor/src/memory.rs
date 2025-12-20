@@ -1,7 +1,8 @@
 use kvm_bindings::kvm_userspace_memory_region;
 use kvm_ioctls::Kvm;
 use log::info;
-use vm_memory::{GuestAddress, GuestMemoryMmap, MappedRegion};
+use vm_memory::GuestAddress;
+use vm_memory::mmap ::{GuestMemoryMmap};
 
 use crate::error::{HypervisorError, Result};
 

@@ -1,7 +1,6 @@
 use kvm_bindings::kvm_msr_entry;
 use log::info;
 use kvm_ioctls::{VcpuExit, VcpuFd};
-use std::os::unix::io::AsRawFd;
 
 use crate::error::{HypervisorError, Result};
 
