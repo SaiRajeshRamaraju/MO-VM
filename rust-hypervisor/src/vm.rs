@@ -2,11 +2,10 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 use std::time::Duration;
 use std::thread;
-
 use kvm_ioctls::{Kvm, VmFd};
 use log::{debug, error, info};
 use tokio::sync::{broadcast, mpsc, oneshot};
-use vhost::vhost_user::message::VhostUserMemoryRegion;
+use vhost::vhost_user::protocol::VhostUserMemoryRegion;
 use vm_memory::{GuestAddress, GuestMemory, Address};
 use vmm_sys_util::eventfd::EventFd;
 
@@ -50,7 +49,7 @@ pub struct VirtualMachine {
     vcpus: Vec<Vcpu>,
     memory: GuestMemoryRegions,
     kernel_loader: Option<KernelLoader>,
-    devices: Vec<Box<dyn VirtioDevice<Error = crate::error::Error>>>,
+    devices: Vec<Box<dyn VirtioDevice<Error = crate::error::HypervisorError>>>,
     snapshot_manager: SnapshotManager,
     num_cpus: u32,
     next_irq: u32,

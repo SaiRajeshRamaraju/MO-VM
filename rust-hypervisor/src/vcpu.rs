@@ -6,9 +6,9 @@ use crate::error::{HypervisorError, Result};
 
 pub struct Vcpu {
     pub fd: VcpuFd,
-    pub id: u64,
+    pub id: u64, // why do we need an id for virtual cpu ?
 }
-
+// Why ?
 impl Vcpu {
     pub fn new(fd: VcpuFd, id: u64) -> Result<Self> {
         Ok(Self { fd, id })

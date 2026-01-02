@@ -10,9 +10,9 @@ pub mod vcpu;
 pub mod virtio;
 pub mod vm;
 pub mod snapshot;
-
-// Re-exports for convenience
-pub use error::Error;
+use thiserror::Error; //why this isn't working
+// Re-exports for convenience , bullshit
+pub use error::HypervisorError;
 pub use vm::VirtualMachine;
 pub use virtio::fs as virtio_fs;
 pub use virtio_fs::{VirtioFs, Acl, AclEntry, AclPermissions};

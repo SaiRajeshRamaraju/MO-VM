@@ -1,7 +1,5 @@
-use thiserror::Error;
 use bincode;
 use vm_memory::GuestMemoryError;
-
 #[derive(Debug, thiserror::Error)]
 pub enum HypervisorError {
     #[error("KVM error: {0}")]
