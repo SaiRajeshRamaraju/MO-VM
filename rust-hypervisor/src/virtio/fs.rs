@@ -1,22 +1,23 @@
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, RwLock};
 use std::io;
-use std::fs::{self, File, OpenOptions, Metadata};
-use std::os::unix::fs::{FileTypeExt, PermissionsExt, MetadataExt};
+use std::fs::{self, File, OpenOptions};
+use std::os::unix::fs::MetadataExt;
 use std::collections::HashMap;
 
 use bitflags::bitflags;
 use serde::{Serialize, Deserialize};
-use log::{debug, error};
-use vm_memory::Bytes;
+use log::debug;
+use vm_memory::{Bytes, GuestAddressSpace};
+use vmm_sys_util::eventfd::EventFd;
 use vhost_user_backend::{VhostUserBackendMut, VringRwLock, VringT};
-use virtio_queue::QueueOwnedT;
+use virtio_queue::{QueueOwnedT, QueueT};
 
 use crate::error::{Result, HypervisorError};
 use crate::virtio::VirtioDevice;
 
 const MAX_IOVEC: usize = 128;
-const MAX_IO_BYTES: usize = 64 * 1024; // 64KB max I/O size
+const MAX_IO_BYTES: usize = 64 * 1024;
 
 // ACL Permissions
 bitflags! {
@@ -34,7 +35,6 @@ impl serde::Serialize for AclPermissions {
     where
         S: serde::Serializer,
     {
-        // Use the underlying u32 for serialization
         serializer.serialize_u32(self.bits())
     }
 }
@@ -44,7 +44,6 @@ impl<'de> serde::Deserialize<'de> for AclPermissions {
     where
         D: serde::Deserializer<'de>,
     {
-        // Deserialize as u32 and convert to AclPermissions
         let bits = u32::deserialize(deserializer).map_err(serde::de::Error::custom)?;
         AclPermissions::from_bits(bits).ok_or_else(|| serde::de::Error::custom("invalid AclPermissions value"))
     }
@@ -78,8 +77,8 @@ pub struct Acl {
 impl Default for Acl {
     fn default() -> Self {
         Self {
-            owner: 0, // root
-            group: 0, // root
+            owner: 0,
+            group: 0,
             entries: Vec::new(),
         }
     }
@@ -87,25 +86,19 @@ impl Default for Acl {
 
 impl Acl {
     pub fn check_permission(&self, uid: u32, gid: u32, required: AclPermissions) -> bool {
-        // Check owner
         if self.owner == uid {
             return self.entries.iter()
                 .find(|e| e.uid == uid)
                 .map(|e| e.permissions.contains(required))
                 .unwrap_or_else(|| {
-                    // Default owner has all permissions
                     required.is_empty() || required == AclPermissions::all()
                 });
         }
-
-        // Check group
         if self.group == gid {
             return self.entries.iter()
                 .filter(|e| e.gid == gid)
                 .any(|e| e.permissions.contains(required));
         }
-
-        // Check other
         self.entries.iter()
             .filter(|e| e.uid == uid || e.gid == gid)
             .any(|e| e.permissions.contains(required))
@@ -116,62 +109,40 @@ impl Acl {
 pub struct FsState {
     root: PathBuf,
     acls: RwLock<HashMap<PathBuf, Acl>>,
-    mmio_region: Option<(u64, u64)>, // (base, size)
+    mmio_region: Option<(u64, u64)>,
     mmio_data: RwLock<Vec<u8>>,
-}
-
-#[derive(Debug, Clone)]
-pub struct FileAttr {
-    pub ino: u64,
-    pub size: u64,
-    pub blocks: u64,
-    pub atime: SystemTime,
-    pub mtime: SystemTime,
-    pub ctime: SystemTime,
-    pub kind: FileType,
-    pub perm: u16,
-    pub nlink: u32,
-    pub uid: u32,
-    pub gid: u32,
-    pub rdev: u32,
-    pub blksize: u32,
 }
 
 impl FsState {
     pub fn new(root: &Path, mmio_region: Option<(u64, u64)>) -> Result<Self> {
-        // Ensure the root directory exists
         if !root.exists() {
             fs::create_dir_all(root)?;
         }
-        
+
         let mmio_data = if let Some((_, size)) = mmio_region {
             vec![0u8; size as usize]
         } else {
             Vec::new()
         };
-        
+
         let state = Self {
             root: root.to_path_buf(),
             acls: RwLock::new(HashMap::new()),
             mmio_region,
             mmio_data: RwLock::new(mmio_data),
         };
-        
-        // Initialize root ACL
+
         state.init_acl(root)?;
-        
         Ok(state)
     }
-    
+
     fn get_path(&self, fid: u64) -> Result<PathBuf> {
-        // In a real implementation, we would maintain a mapping of FIDs to paths
         Ok(self.root.join(fid.to_string()))
     }
-    
+
     fn init_acl(&self, path: &Path) -> Result<()> {
         let metadata = fs::metadata(path)?;
         let mut acls = self.acls.write().unwrap();
-        
         if !acls.contains_key(path) {
             let acl = Acl {
                 owner: metadata.uid(),
@@ -180,64 +151,52 @@ impl FsState {
             };
             acls.insert(path.to_path_buf(), acl);
         }
-        
         Ok(())
     }
-    
+
     pub fn set_acl(&self, path: &Path, acl: Acl) -> Result<()> {
         let mut acls = self.acls.write().unwrap();
         acls.insert(path.to_path_buf(), acl);
         Ok(())
     }
-    
+
     pub fn get_acl(&self, path: &Path) -> Option<Acl> {
         let acls = self.acls.read().unwrap();
         acls.get(path).cloned()
     }
-    
-    // MMIO methods
+
     pub fn mmio_read(&self, offset: u64, data: &mut [u8]) -> Result<()> {
         let mmio_data = self.mmio_data.read().unwrap();
         let offset = offset as usize;
-        
         if offset + data.len() > mmio_data.len() {
             return Err(HypervisorError::IoError(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "Invalid offset"
+                io::ErrorKind::InvalidInput, "Invalid offset"
             )));
         }
-        
         data.copy_from_slice(&mmio_data[offset..offset + data.len()]);
         Ok(())
     }
-    
+
     pub fn mmio_write(&self, offset: u64, data: &[u8]) -> Result<()> {
         let mut mmio_data = self.mmio_data.write().unwrap();
         let offset = offset as usize;
-        
         if offset + data.len() > mmio_data.len() {
             return Err(HypervisorError::IoError(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "Invalid offset"
+                io::ErrorKind::InvalidInput, "Invalid offset"
             )));
         }
-        
         mmio_data[offset..offset + data.len()].copy_from_slice(data);
         Ok(())
     }
-    
+
     fn create_file(&self, path: &Path, _perm: u32) -> io::Result<File> {
-        let file = OpenOptions::new()
-            .create(true)
-            .write(true)
-            .open(path)?;
+        let file = OpenOptions::new().create(true).write(true).open(path)?;
         if let Err(e) = self.init_acl(path) {
-            error!("Failed to initialize ACL: {}", e);
             return Err(io::Error::new(io::ErrorKind::Other, format!("Failed to initialize ACL: {}", e)));
         }
         Ok(file)
     }
-    
+
     fn open_file(&self, path: &Path, read: bool, write: bool) -> io::Result<File> {
         let mut opts = OpenOptions::new();
         opts.read(read).write(write);
@@ -247,7 +206,7 @@ impl FsState {
 
 pub struct VirtioFs {
     state: Arc<RwLock<FsState>>,
-    mem: GuestMemoryMmap,
+    mem: vm_memory::atomic::GuestMemoryAtomic<vm_memory::mmap::GuestMemoryMmap>,
     vrings: [Option<VringRwLock>; 2],
     queue_evts: [EventFd; 2],
     irq_trigger: EventFd,
@@ -256,235 +215,146 @@ pub struct VirtioFs {
 }
 
 impl VirtioFs {
-    pub fn new(root: &Path, mem: GuestMemoryMmap, irq_trigger: EventFd) -> Result<Self> {
-        // Create the FsState without mmio_region for now
+    pub fn new(root: &Path, mem: vm_memory::atomic::GuestMemoryAtomic<vm_memory::mmap::GuestMemoryMmap>, irq_trigger: EventFd) -> Result<Self> {
         let state = Arc::new(RwLock::new(FsState::new(root, None)?));
-        
+
+        let evt0 = EventFd::new(0).map_err(|e| HypervisorError::IoError(e))?;
+        let evt1 = EventFd::new(0).map_err(|e| HypervisorError::IoError(e))?;
+
         Ok(Self {
             state,
             mem,
             vrings: [None, None],
-            queue_evts,
+            queue_evts: [evt0, evt1],
             irq_trigger,
             features: 0,
             acked_features: 0,
         })
     }
-    
+
     fn process_9p(&self, desc_chain: &[u8]) -> Result<()> {
-        // Parse 9P message and dispatch to appropriate handler
-        // This is a simplified version - a real implementation would parse the full 9P protocol
-        
         if desc_chain.len() < 4 {
             return Err(HypervisorError::IoError(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "Invalid message"
+                io::ErrorKind::InvalidInput, "Invalid message"
             )));
         }
-        
-        let msg_type = desc_chain[4]; // 9P message type
-        
+        let msg_type = desc_chain[4];
         match msg_type {
-            // Handle 9P message types
-            // These are just stubs for now - implement as needed
             _msg_type => {
                 debug!("Unhandled 9P message type: {}", msg_type);
                 Err(HypervisorError::IoError(io::Error::new(
-                    io::ErrorKind::Unsupported,
-                    "Operation not supported"
+                    io::ErrorKind::Unsupported, "Operation not supported"
                 )))
             }
         }
     }
-    
-    // 9P message handlers
-    fn handle_version(&self, _data: &[u8]) -> Result<()> {
-        // Return our version information
-        // In a real implementation, we would parse the request and format a proper response
-        Ok(())
-    }
-    
-    fn handle_attach(&self, _data: &[u8]) -> Result<()> {
-        // Handle attach request
-        Ok(())
-    }
-    
-    fn handle_walk(&self, _data: &[u8]) -> Result<()> {
-        // Handle directory walk
-        Ok(())
-    }
-    
-    fn handle_getattr(&self, _data: &[u8]) -> Result<()> {
-        // Handle get attribute request
-        Ok(())
-    }
-    
-    fn handle_open(&self, _data: &[u8]) -> Result<()> {
-        // Handle file open
-        Ok(())
-    }
-    
-    fn handle_read(&self, _data: &[u8]) -> Result<()> {
-        // Handle file read
-        Ok(())
-    }
-    
-    fn handle_write(&self, _data: &[u8]) -> Result<()> {
-        // Handle file write
-        Ok(())
-    }
-    
-    fn handle_clunk(&self, _data: &[u8]) -> Result<()> {
-        // Handle close/unlink
-        Ok(())
-    }
+
+    fn handle_version(&self, _data: &[u8]) -> Result<()> { Ok(()) }
+    fn handle_attach(&self, _data: &[u8]) -> Result<()> { Ok(()) }
+    fn handle_walk(&self, _data: &[u8]) -> Result<()> { Ok(()) }
+    fn handle_getattr(&self, _data: &[u8]) -> Result<()> { Ok(()) }
+    fn handle_open(&self, _data: &[u8]) -> Result<()> { Ok(()) }
+    fn handle_read(&self, _data: &[u8]) -> Result<()> { Ok(()) }
+    fn handle_write(&self, _data: &[u8]) -> Result<()> { Ok(()) }
+    fn handle_clunk(&self, _data: &[u8]) -> Result<()> { Ok(()) }
 }
 
 impl VirtioDevice for VirtioFs {
-    type Error = crate::error::Error;
-    fn device_type(&self) -> u32 {
-        // Virtio device ID for filesystem is 26
-        26
-    }
+    type Error = crate::error::HypervisorError;
+    fn device_type(&self) -> u32 { 26 }
 
     fn get_features(&self) -> u64 {
-        // Basic features for Virtio FS
-        (1 << 0) | (1 << 32)  // VIRTIO_F_VERSION_1 | VIRTIO_F_IOMMU_PLATFORM
+        (1 << 0) | (1 << 32)
     }
 
-    fn get_config(&self, _offset: u32, _size: u32) -> Vec<u8> {
-        // No configuration needed for VirtioFS
-        Vec::new()
-    }
-    
-    fn protocol_features(&self) -> vhost::vhost_user::message::VhostUserProtocolFeatures {
-        vhost::vhost_user::message::VhostUserProtocolFeatures::empty()
-    }
-    
-    fn set_event_idx(&mut self, _enable: bool) {
-        // Not needed for our implementation
-    }
-    
     fn set_acked_features(&mut self, features: u64) -> Result<()> {
         self.acked_features = features;
         Ok(())
     }
-    
+
     fn read_config(&self, _offset: u64, data: &mut [u8]) -> Result<()> {
-        // No configuration to read for VirtioFS
-        for (_i, byte) in data.iter_mut().enumerate() {
-            *byte = 0;
-        }
-        Ok(())
-    }
-    
-    fn write_config(&mut self, _offset: u64, _data: &[u8]) -> Result<()> {
-        // No configuration to write for VirtioFS
+        for byte in data.iter_mut() { *byte = 0; }
         Ok(())
     }
 
-    fn process_queue(&mut self, _queue_idx: u32) -> Result<()> {
-        // Process the virtqueue
-        // The actual queue processing is handled by VhostUserBackendMut
-        Ok(())
-    }
+    fn write_config(&mut self, _offset: u64, _data: &[u8]) -> Result<()> { Ok(()) }
 
-    fn get_queues(&self) -> Vec<u16> {
-        // Return the number of queues (1 for Virtio FS)
-        vec![256]  // Default queue size of 256
-    }
+    fn process_queue(&mut self, _queue_idx: u32) -> Result<()> { Ok(()) }
 
-    fn get_interrupt_status(&self) -> u32 {
-        // No interrupts implemented yet
-        0
-    }
+    fn get_queues(&self) -> Vec<u16> { vec![256] }
+
+    fn get_interrupt_status(&self) -> u32 { 0 }
 }
 
 impl VhostUserBackendMut for VirtioFs {
     type Vring = VringRwLock;
     type Bitmap = ();
-    
-    fn num_queues(&self) -> usize {
-        1
-    }
-    
-    fn max_queue_size(&self) -> usize {
-        256
-    }
-    
-    fn features(&self) -> u64 {
-        self.features
-    }
-    
-    fn update_memory(&mut self, mem: vm_memory::atomic::GuestMemoryAtomic<vm_memory::GuestMemoryMmap>) -> Result<()> {
+
+    fn num_queues(&self) -> usize { 1 }
+    fn max_queue_size(&self) -> usize { 256 }
+    fn features(&self) -> u64 { self.features }
+
+    fn update_memory(&mut self, mem: vm_memory::atomic::GuestMemoryAtomic<vm_memory::mmap::GuestMemoryMmap>) -> std::result::Result<(), std::io::Error> {
         self.mem = mem;
         Ok(())
     }
-    
+
     fn protocol_features(&self) -> vhost::vhost_user::message::VhostUserProtocolFeatures {
         vhost::vhost_user::message::VhostUserProtocolFeatures::empty()
     }
-    
-    fn set_event_idx(&mut self, _enable: bool) {
-        // Not needed for our implementation
-    }
-    
+
+    fn set_event_idx(&mut self, _enable: bool) {}
+
     fn handle_event(
         &mut self,
         device_event: u16,
-        evset: EventSet,
+        evset: vmm_sys_util::epoll::EventSet,
         vrings: &[VringRwLock],
         _thread_id: usize,
-    ) -> Result<()> {
+    ) -> std::result::Result<(), std::io::Error> {
         if device_event != 0 {
-            return Err(HypervisorError::IoError(std::io::Error::new(
+            return Err(std::io::Error::new(
                 std::io::ErrorKind::Other,
                 "Unexpected device event",
-            )));
+            ));
         }
-        
-        if !evset.contains(EventSet::IN) {
+
+        if !evset.contains(vmm_sys_util::epoll::EventSet::IN) {
             return Ok(());
         }
-        
-        // Process available requests
+
         if let Some(vring) = vrings.get(0) {
             let mut vring = vring.get_mut();
-            
-            // Get the queue mutably and process available descriptor chains
             let queue = vring.get_queue_mut();
-            let mem = &self.mem;
-            
-            // Process available descriptor chains
-            // This is a simplified version - in a real implementation, you would need to properly
-            // handle the descriptor chain processing
-            while let Some(desc_chain) = queue.iter(mem).next() {
-                // Process the descriptor chain
-                let len = desc_chain.len();
-                let mut data = vec![0; len as usize];
-                if let Err(e) = desc_chain.memory().read_slice(&mut data, desc_chain.addr()) {
-                    error!("Failed to read descriptor chain data: {}", e);
+            let mem_guard = self.mem.memory();
+
+            while let Some(mut desc_chain) = queue.iter(&*mem_guard).map_err(|e| {
+                std::io::Error::new(std::io::ErrorKind::Other, format!("Queue iter error: {:?}", e))
+            })?.next() {
+                let head_index = desc_chain.head_index();
+                let desc = match desc_chain.next() {
+                    Some(d) => d,
+                    None => continue,
+                };
+                let len = desc.len() as usize;
+                let mut data = vec![0; len];
+                if let Err(_) = mem_guard.read_slice(&mut data, desc.addr()) {
                     continue;
                 }
-                
-                if let Err(e) = self.process_9p(&data) {
-                    error!("Error processing 9P request: {}", e);
-                }
-                
-                // Complete the request
-                vring.add_used(desc_chain.head_index(), len as u32);
-                vring.signal_used_queue()?;
+
+                let _ = self.process_9p(&data);
+
+                let _ = queue.add_used(&*mem_guard, head_index, len as u32);
             }
         }
-        
-        // Signal interrupt if needed
-        self.irq_trigger.write(1).map_err(|e| {
+
+        self.irq_trigger.write(1u64).map_err(|e| {
             std::io::Error::new(
                 std::io::ErrorKind::Other,
                 format!("Failed to signal irq: {}", e),
             )
         })?;
-        
+
         Ok(())
     }
 }
@@ -494,19 +364,19 @@ impl VhostUserBackendMut for VirtioFs {
 pub enum Error {
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
-    
+
     #[error("Invalid message format")]
     InvalidMessage,
-    
+
     #[error("Unsupported operation")]
     UnsupportedOperation,
-    
+
     #[error("Permission denied")]
     PermissionDenied,
-    
+
     #[error("Invalid offset")]
     InvalidOffset,
-    
+
     #[error("EventFd error: {0}")]
     EventFd(std::io::Error),
 }

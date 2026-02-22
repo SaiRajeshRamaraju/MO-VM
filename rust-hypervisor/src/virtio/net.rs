@@ -3,10 +3,9 @@ use std::net::UdpSocket;
 use std::sync::{Arc, Mutex};
 
 use log::{error, info, warn};
-use pnet::packet::Packet;
-use vm_memory::{GuestAddress, GuestMemoryMmap};
-use vm_virtio::queue::Queue;
-use vm_virtio::VirtioDeviceConfig;
+use vm_memory::{Bytes, GuestAddress, GuestMemoryMmap};
+use virtio_queue::{QueueOwnedT, QueueT};
+use crate::virtio::VirtioDeviceConfig;
 
 use crate::error::{HypervisorError, Result};
 use super::VirtioDevice;
@@ -15,9 +14,6 @@ use super::VirtioDevice;
 const VIRTIO_ID_NET: u32 = 1;
 
 // Feature bits
-const VIRTIO_NET_F_CSUM: u64 = 0;
-const VIRTIO_NET_F_GUEST_CSUM: u64 = 1;
-const VIRTIO_NET_F_MTU: u64 = 3;
 const VIRTIO_NET_F_MAC: u64 = 5;
 const VIRTIO_NET_F_STATUS: u64 = 16;
 const VIRTIO_F_VERSION_1: u64 = 1 << 32;
@@ -32,7 +28,7 @@ struct NetConfig {
 }
 
 pub struct VirtioNet {
-    config: VirtioDeviceConfig<Queue<GuestMemoryMmap>>,
+    config: VirtioDeviceConfig,
     socket: Arc<Mutex<UdpSocket>>,
     local_mac: [u8; 6],
     peer_addr: Option<std::net::SocketAddr>,
@@ -73,7 +69,6 @@ impl VirtioNet {
             HypervisorError::MemoryError(format!("Failed to create virtio config: {}", e))
         })?;
 
-        // Generate a random MAC address (locally administered, unicast)
         let mut mac = [0u8; 6];
         getrandom::getrandom(&mut mac).map_err(|e| {
             HypervisorError::IoError(io::Error::new(
@@ -81,7 +76,7 @@ impl VirtioNet {
                 format!("Failed to generate MAC address: {}", e),
             ))
         })?;
-        mac[0] = 0x02; // Locally administered, unicast
+        mac[0] = 0x02;
 
         Ok(Self {
             config,
@@ -91,9 +86,9 @@ impl VirtioNet {
         })
     }
 
-    fn process_rx_queue(&self) -> Result<()> {
-        let mem = self.config.memory();
-        let mut queue = self.config.queues_mut().get_mut(0).ok_or_else(|| {
+    fn process_rx_queue(&mut self) -> Result<()> {
+        let mem = &self.config.mem;
+        let queue = self.config.queues.get_mut(0).ok_or_else(|| {
             HypervisorError::MemoryError("RX queue not found".into())
         })?;
 
@@ -104,15 +99,14 @@ impl VirtioNet {
             ))
         })?;
 
-        while let Some(mut chain) = queue.iter(mem).map_err(|e| {
+        while let Some(desc_chain) = queue.iter(mem).map_err(|e| {
             HypervisorError::MemoryError(format!("Failed to iterate queue: {}", e))
         })?.next() {
-            let mut buf = vec![0u8; 1514]; // Standard MTU + Ethernet header
-            
+            let head_index = desc_chain.head_index();
+            let mut buf = vec![0u8; 1514];
+
             match socket.recv_from(&mut buf) {
                 Ok((len, _)) => {
-                    // In a real implementation, we would process the packet here
-                    // and write it to the guest's receive buffer
                     info!("Received {} bytes on network interface", len);
                 }
                 Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
@@ -122,14 +116,16 @@ impl VirtioNet {
                     return Err(HypervisorError::IoError(e));
                 }
             }
+
+            let _ = queue.add_used(mem, head_index, 0);
         }
 
         Ok(())
     }
 
-    fn process_tx_queue(&self) -> Result<()> {
-        let mem = self.config.memory();
-        let mut queue = self.config.queues_mut().get_mut(1).ok_or_else(|| {
+    fn process_tx_queue(&mut self) -> Result<()> {
+        let mem = &self.config.mem;
+        let queue = self.config.queues.get_mut(1).ok_or_else(|| {
             HypervisorError::MemoryError("TX queue not found".into())
         })?;
 
@@ -140,29 +136,25 @@ impl VirtioNet {
             ))
         })?;
 
-        while let Some(chain) = queue.iter(mem).map_err(|e| {
+        while let Some(desc_chain) = queue.iter(mem).map_err(|e| {
             HypervisorError::MemoryError(format!("Failed to iterate queue: {}", e))
         })?.next() {
+            let head_index = desc_chain.head_index();
             let mut buf = Vec::new();
-            
-            for desc in chain {
-                let mut chunk = vec![0u8; desc.len as usize];
-                mem.read_slice(&mut chunk, desc.addr)?;
+
+            for desc in desc_chain {
+                let mut chunk = vec![0u8; desc.len() as usize];
+                let _ = mem.read_slice(&mut chunk, desc.addr());
                 buf.extend_from_slice(&chunk);
             }
-            
+
             if let Some(peer) = self.peer_addr {
                 if let Err(e) = socket.send_to(&buf, peer) {
                     error!("Failed to send packet: {}", e);
-                } else {
-                    info!("Sent {} bytes to {}", buf.len(), peer);
                 }
             }
-            
-            // Mark the descriptor as used
-            queue.add_used(mem, chain.head_index(), buf.len() as u32).map_err(|e| {
-                HypervisorError::MemoryError(format!("Failed to add used descriptor: {}", e))
-            })?;
+
+            let _ = queue.add_used(mem, head_index, buf.len() as u32);
         }
 
         Ok(())
@@ -170,13 +162,12 @@ impl VirtioNet {
 }
 
 impl VirtioDevice for VirtioNet {
-    type Error = crate::error::Error;
+    type Error = crate::error::HypervisorError;
     fn device_type(&self) -> u32 {
         VIRTIO_ID_NET
     }
 
     fn get_features(&self) -> u64 {
-        // Use wrapping_shl to avoid overflow in debug mode
         (1u64.wrapping_shl(VIRTIO_F_VERSION_1 as u32))
             | (1u64.wrapping_shl(VIRTIO_NET_F_MAC as u32))
             | (1u64.wrapping_shl(VIRTIO_NET_F_STATUS as u32))
@@ -192,7 +183,7 @@ impl VirtioDevice for VirtioNet {
     fn read_config(&self, offset: u64, data: &mut [u8]) -> Result<()> {
         let config = NetConfig {
             mac: self.local_mac,
-            status: 1, // Link up
+            status: 1,
             max_virtqueue_pairs: 1,
             mtu: 1500,
         };
@@ -218,7 +209,6 @@ impl VirtioDevice for VirtioNet {
     }
 
     fn write_config(&mut self, _offset: u64, _data: &[u8]) -> Result<()> {
-        // Most network device config is read-only
         Ok(())
     }
 
@@ -233,11 +223,10 @@ impl VirtioDevice for VirtioNet {
     }
 
     fn get_queues(&self) -> Vec<u16> {
-        self.config.queues().iter().map(|q| q.size).collect()
+        self.config.queues().iter().map(|q| q.max_size()).collect()
     }
 
     fn get_interrupt_status(&self) -> u32 {
-        // In a real implementation, we would track interrupt status
         0
     }
 }

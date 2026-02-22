@@ -1,10 +1,13 @@
+use vm_memory::MemoryRegionAddress;
+use std::fs::File;
+use std::io;
+use log::info;
 use std::fmt;
 use std::path::Path;
 use std::sync::Arc;
-use serde::{
-    de::{self, Deserialize, Deserializer, MapAccess, Visitor},
-    ser::{Serialize, Serializer, SerializeStruct, SerializeSeq},
-};
+use serde::{Deserialize, Serialize, Deserializer, Serializer};
+use serde::de::{self, MapAccess, Visitor};
+use serde::ser::{SerializeStruct, SerializeSeq};
 use serde_bytes;
 use vm_memory::{Bytes, GuestAddress, GuestMemory, GuestMemoryMmap, GuestMemoryRegion};
 use kvm_ioctls::VmFd;
@@ -15,7 +18,7 @@ type Result<T, E = Box<dyn std::error::Error + Send + Sync + 'static>> = std::re
 // Custom serialization for kvm_regs
 fn serialize_kvm_regs<S>(regs: &kvm_bindings::kvm_regs, serializer: S) -> Result<S::Ok, S::Error>
 where
-    S: Serializer<Error = Box<dyn std::error::Error + Send + Sync>>,
+    S: Serializer,
 {
     let mut state = serializer.serialize_struct("kvm_regs", 20)
         .map_err(|e| serde::ser::Error::custom(e))?;
@@ -51,7 +54,7 @@ where
 
 fn deserialize_kvm_regs<'de, D>(deserializer: D) -> Result<kvm_bindings::kvm_regs, D::Error>
 where
-    D: Deserializer<'de, Error = Box<dyn std::error::Error + Send + Sync>>,
+    D: Deserializer<'de>,
 {
     // Using a custom visitor to handle kvm_regs deserialization
     struct RegsVisitor;
@@ -106,7 +109,7 @@ where
 // Custom serialization for kvm_sregs
 fn serialize_kvm_sregs<S>(sregs: &kvm_bindings::kvm_sregs, serializer: S) -> Result<S::Ok, S::Error>
 where
-    S: Serializer<Error = Box<dyn std::error::Error + Send + Sync>>,
+    S: Serializer,
 {
     // For simplicity, we'll serialize the sregs as raw bytes
     let bytes = unsafe {
@@ -121,7 +124,7 @@ where
 
 fn deserialize_kvm_sregs<'de, D>(deserializer: D) -> Result<kvm_bindings::kvm_sregs, D::Error>
 where
-    D: Deserializer<'de, Error = Box<dyn std::error::Error + Send + Sync>>,
+    D: Deserializer<'de>,
 {
     let bytes = <&[u8]>::deserialize(deserializer)
         .map_err(serde::de::Error::custom)?;
@@ -148,7 +151,7 @@ where
 // Custom serialization for kvm_fpu
 fn serialize_kvm_fpu<S>(fpu: &kvm_bindings::kvm_fpu, serializer: S) -> Result<S::Ok, S::Error>
 where
-    S: Serializer<Error = Box<dyn std::error::Error + Send + Sync>>,
+    S: Serializer,
 {
     // For simplicity, we'll serialize the fpu as raw bytes
     let bytes = unsafe {
@@ -163,7 +166,7 @@ where
 
 fn deserialize_kvm_fpu<'de, D>(deserializer: D) -> Result<kvm_bindings::kvm_fpu, D::Error>
 where
-    D: Deserializer<'de, Error = Box<dyn std::error::Error + Send + Sync>>,
+    D: Deserializer<'de>,
 {
     let bytes = <&[u8]>::deserialize(deserializer)
         .map_err(serde::de::Error::custom)?;
@@ -190,7 +193,7 @@ where
 // Custom serialization for kvm_msr_entry
 fn serialize_kvm_msr_entry<S>(entry: &kvm_bindings::kvm_msr_entry, serializer: S) -> Result<S::Ok, S::Error>
 where
-    S: Serializer<Error = Box<dyn std::error::Error + Send + Sync>>,
+    S: Serializer,
 {
     let mut state = serializer.serialize_struct("kvm_msr_entry", 3)
         .map_err(serde::ser::Error::custom)?;
@@ -207,7 +210,7 @@ where
 
 fn deserialize_kvm_msr_entry<'de, D>(deserializer: D) -> Result<kvm_bindings::kvm_msr_entry, D::Error>
 where
-    D: Deserializer<'de, Error = Box<dyn std::error::Error + Send + Sync>>,
+    D: Deserializer<'de>,
 {
     // Using a custom visitor to handle kvm_msr_entry deserialization
     struct MsrEntryVisitor;
@@ -271,7 +274,7 @@ where
 
 fn serialize_msr_entries<S>(msrs: &[kvm_bindings::kvm_msr_entry], serializer: S) -> Result<S::Ok, S::Error>
 where
-    S: Serializer<Error = Box<dyn std::error::Error + Send + Sync>>,
+    S: Serializer,
 {
     let mut seq = serializer.serialize_seq(Some(msrs.len()))?;
     
@@ -286,8 +289,7 @@ where
     seq.end()
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(crate = "serde")]
+#[derive(Debug)]
 pub struct VmState {
     pub memory_regions: Vec<MemoryRegion>,
     pub vcpu_states: Vec<VcpuState>,
@@ -396,12 +398,12 @@ impl Serialize for MemoryRegion {
     where
         S: Serializer,
     {
-        use serde::ser::Error;
+        
         
         let mut state = serializer.serialize_struct("MemoryRegion", 3)?;
         state.serialize_field("guest_addr", &self.guest_addr)?;
         state.serialize_field("size", &self.size)?;
-        state.serialize_field("data", &serde_bytes::Bytes::new(&self.data))?;
+        state.serialize_field("data", &self.data)?;
         state.end()
     }
 }
@@ -450,8 +452,8 @@ impl<'de> Deserialize<'de> for MemoryRegion {
                             if data.is_some() {
                                 return Err(de::Error::duplicate_field("data"));
                             }
-                            let bytes: &serde_bytes::Bytes = map.next_value()?;
-                            data = Some(bytes.to_vec());
+                            let bytes: Vec<u8> = map.next_value()?;
+                            data = Some(bytes);
                         }
                         Field::Ignored => {
                             let _: de::IgnoredAny = map.next_value()?;
@@ -487,7 +489,7 @@ impl Serialize for DeviceState {
     where
         S: Serializer,
     {
-        use serde::ser::Error;
+        
         
         let mut state = serializer.serialize_struct("DeviceState", 2)?;
         state.serialize_field("device_type", &self.device_type)?;
@@ -571,7 +573,7 @@ impl Serialize for VcpuState {
     where
         S: Serializer,
     {
-        use serde::ser::Error;
+        
         
         let mut state = serializer.serialize_struct("VcpuState", 5)?;
         
@@ -801,7 +803,7 @@ impl<'de> Visitor<'de> for MsrEntriesVisitor {
 
 fn deserialize_msr_entries<'de, D>(deserializer: D) -> Result<Vec<kvm_bindings::kvm_msr_entry>, D::Error>
 where
-    D: Deserializer<'de, Error = Box<dyn std::error::Error + Send + Sync>>,
+    D: Deserializer<'de>,
 {
     deserializer.deserialize_seq(MsrEntriesVisitor)
 }
@@ -1019,15 +1021,30 @@ mod tests {
             device_states: Vec::new(),
         };
 
+        // Test serialization to JSON (custom Deserialize impl expects map format)
+        let json = serde_json::to_string(&state).unwrap();
+        
+        // Test deserialization from JSON
+        let deserialized: VmState = serde_json::from_str(&json).unwrap();
+        
+        // Verify key fields survived the round-trip
+        assert_eq!(deserialized.memory_regions.len(), 1);
+        assert_eq!(deserialized.memory_regions[0].guest_addr, 0x1000);
+        assert_eq!(deserialized.memory_regions[0].size, 4096);
+        assert_eq!(deserialized.vcpu_states.len(), 1);
+        assert_eq!(deserialized.vcpu_states[0].id, 0);
+        assert_eq!(deserialized.device_states.len(), 0);
+        
+        // Also test file-based round-trip
         let temp_dir = tempdir().unwrap();
-        let path = temp_dir.path().join("snapshot.bin");
+        let path = temp_dir.path().join("snapshot.json");
         
-        // Test serialization
         let file = File::create(&path).unwrap();
-        bincode::serialize_into(file, &state).unwrap();
+        serde_json::to_writer(file, &state).unwrap();
         
-        // Test deserialization
         let file = File::open(&path).unwrap();
-        let _: VmState = bincode::deserialize_from(file).unwrap();
+        let loaded: VmState = serde_json::from_reader(file).unwrap();
+        assert_eq!(loaded.memory_regions.len(), 1);
+        assert_eq!(loaded.vcpu_states.len(), 1);
     }
 }

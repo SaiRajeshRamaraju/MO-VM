@@ -1,11 +1,12 @@
+use std::sync::{Arc, Mutex};
 use std::fs::{File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::Path;
 
-use log::{debug, error, info, warn};
+use log::warn;
 use vm_memory::{Address, Bytes, GuestAddress, GuestMemoryMmap, Le16, Le32, Le64};
-use vm_virtio::queue::Queue;
-use vm_virtio::VirtioDeviceConfig;
+use virtio_queue::{QueueOwnedT, QueueT};
+use crate::virtio::VirtioDeviceConfig;
 
 use crate::error::{HypervisorError, Result};
 use super::VirtioDevice;
@@ -70,7 +71,7 @@ struct BlockTopology {
 }
 
 pub struct VirtioBlock {
-    config: VirtioDeviceConfig<Queue<GuestMemoryMmap>>,
+    config: VirtioDeviceConfig,
     disk: Arc<Mutex<File>>,
     disk_size: u64,
     block_size: u32,
@@ -121,15 +122,16 @@ impl VirtioBlock {
         })
     }
 
-    fn process_request<M: vm_memory::GuestMemory>(&self, desc_chain: virtio_queue::QueueIter<M>) -> Result<u8> {
+    fn process_request(&self, desc_chain: virtio_queue::DescriptorChain<&GuestMemoryMmap>) -> Result<u8> {
         let mut disk = self.disk.lock().unwrap();
         let mem = self.config.memory();
-        let mut status = VIRTIO_BLK_S_OK as u8;
+        let mut status = VIRTIO_BLK_S_OK;
 
         for desc in desc_chain {
-            let req_type: u32 = desc
-                .read_obj(0)
+            let mut req_type_buf = [0u8; 4];
+            mem.read_slice(&mut req_type_buf, desc.addr())
                 .map_err(|_| HypervisorError::MemoryError("Failed to read request type".into()))?;
+            let req_type = u32::from_le_bytes(req_type_buf);
 
             match req_type {
                 VIRTIO_BLK_T_IN => self.handle_read(&mut disk, &desc, mem)?,
@@ -161,24 +163,21 @@ impl VirtioBlock {
     fn handle_read(
         &self,
         disk: &mut File,
-        desc: &virtio_queue::DescriptorChain,
+        desc: &virtio_queue::Descriptor,
         mem: &GuestMemoryMmap,
     ) -> Result<()> {
-        // Read the sector number from the descriptor
         let mut sector_buf = [0u8; 8];
-        desc.memory()
-            .read_slice(&mut sector_buf, desc.addr())
+        mem.read_slice(&mut sector_buf, desc.addr())
             .map_err(|_| HypervisorError::MemoryError("Failed to read sector".into()))?;
         let sector = u64::from_le_bytes(sector_buf);
 
         let offset = sector * self.block_size as u64;
         disk.seek(SeekFrom::Start(offset))?;
 
-        // Read data from disk
-        let mut buf = vec![0u8; desc.len() as usize - 16];
+        let buf_len = (desc.len() as usize).saturating_sub(16);
+        let mut buf = vec![0u8; buf_len];
         disk.read_exact(&mut buf)?;
 
-        // Write data to guest memory
         let write_addr = desc.addr().checked_add(16).ok_or_else(|| {
             HypervisorError::MemoryError("Invalid descriptor address".into())
         })?;
@@ -190,55 +189,49 @@ impl VirtioBlock {
     fn handle_write(
         &self,
         disk: &mut File,
-        desc: &virtio_queue::DescriptorChain,
+        desc: &virtio_queue::Descriptor,
         mem: &GuestMemoryMmap,
     ) -> Result<()> {
-        // Read the sector number from the descriptor
         let mut sector_buf = [0u8; 8];
-        desc.memory()
-            .read_slice(&mut sector_buf, desc.addr())
+        mem.read_slice(&mut sector_buf, desc.addr())
             .map_err(|_| HypervisorError::MemoryError("Failed to read sector".into()))?;
         let sector = u64::from_le_bytes(sector_buf);
 
         let offset = sector * self.block_size as u64;
         disk.seek(SeekFrom::Start(offset))?;
 
-        // Read data from guest memory
-        let mut buf = vec![0u8; desc.len() as usize - 16];
+        let buf_len = (desc.len() as usize).saturating_sub(16);
+        let mut buf = vec![0u8; buf_len];
         let read_addr = desc.addr().checked_add(16).ok_or_else(|| {
             HypervisorError::MemoryError("Invalid descriptor address".into())
         })?;
         mem.read_slice(&mut buf, read_addr)?;
 
-        // Write data to disk
         disk.write_all(&buf)?;
         Ok(())
     }
 }
 
 impl VirtioDevice for VirtioBlock {
-    type Error = crate::error::Error;
+    type Error = crate::error::HypervisorError;
     fn device_type(&self) -> u32 {
         VIRTIO_ID_BLOCK
     }
 
     fn get_features(&self) -> u64 {
-        let mut features = 1u64 << VIRTIO_F_VERSION_1
-            | 1u64 << VIRTIO_RING_F_EVENT_IDX
-            | 1u64 << VIRTIO_F_ANY_LAYOUT
-            | 1u64 << VIRTIO_BLK_F_BLK_SIZE
-            | 1u64 << VIRTIO_BLK_F_FLUSH
-            | 1u64 << VIRTIO_BLK_F_TOPOLOGY;
+        let mut features = VIRTIO_F_VERSION_1
+            | VIRTIO_BLK_F_BLK_SIZE
+            | VIRTIO_BLK_F_FLUSH
+            | VIRTIO_BLK_F_TOPOLOGY;
 
         if self.read_only {
-            features |= 1u64 << VIRTIO_BLK_F_RO;
+            features |= VIRTIO_BLK_F_RO;
         }
 
         features
     }
 
     fn set_acked_features(&mut self, features: u64) -> Result<()> {
-        // In a real implementation, we would validate the features here
         if (features & !self.get_features()) != 0 {
             warn!("Guest tried to enable unsupported features: {:#x}", features);
         }
@@ -248,10 +241,10 @@ impl VirtioDevice for VirtioBlock {
     fn read_config(&self, offset: u64, data: &mut [u8]) -> Result<()> {
         let config = BlockConfig {
             capacity: Le64::from(self.disk_size / self.block_size as u64),
-            size_max: Le32::from(131072), // 128KB max segment size
-            seg_max: Le32::from(32),      // Max segments in a request
+            size_max: Le32::from(131072),
+            seg_max: Le32::from(32),
             geometry: BlockGeometry {
-                cylinders: Le16::from(0), // Not meaningful for modern devices
+                cylinders: Le16::from(0),
                 heads: 16,
                 sectors: 63,
             },
@@ -294,7 +287,6 @@ impl VirtioDevice for VirtioBlock {
     }
 
     fn write_config(&mut self, _offset: u64, _data: &[u8]) -> Result<()> {
-        // Block device config is read-only
         Ok(())
     }
 
@@ -305,32 +297,73 @@ impl VirtioDevice for VirtioBlock {
             ));
         }
 
-        let mem = self.config.memory();
-        let queue = self.config.queues_mut().get_mut(0).ok_or_else(|| {
+        let mem = &self.config.mem;
+        let disk = self.disk.clone();
+        let block_size = self.block_size;
+        let read_only = self.read_only;
+        let queue = self.config.queues.get_mut(0).ok_or_else(|| {
             HypervisorError::MemoryError("Queue not found".into())
         })?;
 
         while let Some(desc_chain) = queue.iter(mem).map_err(|e| {
             HypervisorError::MemoryError(format!("Failed to iterate queue: {}", e))
         })?.next() {
-            let status = self.process_request(desc_chain)?;
+            let head_index = desc_chain.head_index();
             
-            // Write status byte to the last descriptor
-            if let Some(last_desc) = desc_chain.last() {
-                mem.write_obj(status, last_desc.addr.checked_add(last_desc.len() - 1).ok_or_else(|| {
-                    HypervisorError::MemoryError("Invalid descriptor address".into())
-                })?)?;
+            // Inline process_request logic to avoid borrowing self
+            let mut disk_guard = disk.lock().unwrap();
+            let mut status = VIRTIO_BLK_S_OK;
+
+            for desc in desc_chain {
+                let mut req_type_buf = [0u8; 4];
+                mem.read_slice(&mut req_type_buf, desc.addr())
+                    .map_err(|_| HypervisorError::MemoryError("Failed to read request type".into()))?;
+                let req_type = u32::from_le_bytes(req_type_buf);
+
+                match req_type {
+                    VIRTIO_BLK_T_IN => {
+                        let mut sector_buf = [0u8; 8];
+                        let _ = mem.read_slice(&mut sector_buf, desc.addr());
+                        let sector = u64::from_le_bytes(sector_buf);
+                        let offset = sector * block_size as u64;
+                        let _ = disk_guard.seek(SeekFrom::Start(offset));
+                        let buf_len = (desc.len() as usize).saturating_sub(16);
+                        let mut buf = vec![0u8; buf_len];
+                        let _ = disk_guard.read_exact(&mut buf);
+                        if let Some(write_addr) = desc.addr().checked_add(16) {
+                            let _ = mem.write_slice(&buf, write_addr);
+                        }
+                    }
+                    VIRTIO_BLK_T_OUT => {
+                        if read_only {
+                            status = VIRTIO_BLK_S_IOERR;
+                            break;
+                        }
+                        let mut sector_buf = [0u8; 8];
+                        let _ = mem.read_slice(&mut sector_buf, desc.addr());
+                        let sector = u64::from_le_bytes(sector_buf);
+                        let offset = sector * block_size as u64;
+                        let _ = disk_guard.seek(SeekFrom::Start(offset));
+                        let buf_len = (desc.len() as usize).saturating_sub(16);
+                        let mut buf = vec![0u8; buf_len];
+                        if let Some(read_addr) = desc.addr().checked_add(16) {
+                            let _ = mem.read_slice(&mut buf, read_addr);
+                        }
+                        let _ = disk_guard.write_all(&buf);
+                    }
+                    VIRTIO_BLK_T_FLUSH => { let _ = disk_guard.flush(); }
+                    _ => { status = VIRTIO_BLK_S_UNSUPP; break; }
+                }
             }
-            
-            // Mark the descriptor as used
-            queue.add_used(mem, desc_chain.head_index(), 0).map_err(|e| {
+            drop(disk_guard);
+
+            queue.add_used(mem, head_index, status as u32).map_err(|e| {
                 HypervisorError::MemoryError(format!("Failed to add used descriptor: {}", e))
             })?;
         }
 
-        // Signal interrupt if needed
         if let Some(interrupt_evt) = &self.config.interrupt_evt {
-            interrupt_evt.write(1).map_err(|e| {
+            interrupt_evt.write(1u64).map_err(|e| {
                 HypervisorError::IoError(io::Error::new(
                     io::ErrorKind::Other,
                     format!("Failed to signal interrupt: {}", e),
@@ -342,11 +375,10 @@ impl VirtioDevice for VirtioBlock {
     }
 
     fn get_queues(&self) -> Vec<u16> {
-        self.config.queues().iter().map(|q| q.size).collect()
+        self.config.queues().iter().map(|q| q.max_size()).collect()
     }
 
     fn get_interrupt_status(&self) -> u32 {
-        // In a real implementation, we would track interrupt status
         0
     }
 }
