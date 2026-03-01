@@ -14,6 +14,8 @@ pub mod console;
 pub mod fs;
 /// Virtio network device implementation.
 pub mod net;
+/// Virtio MMIO transport execution.
+pub mod mmio;
 
 pub use block::VirtioBlock;
 pub use console::VirtioConsole;

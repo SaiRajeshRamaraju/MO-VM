@@ -99,7 +99,7 @@ pub struct VirtualMachine {
     // --- Devices ---
     /// All attached virtio devices (console, block, net, fs).
     /// Stored as trait objects since each device type is different.
-    devices: Vec<Box<dyn VirtioDevice<Error = crate::error::HypervisorError>>>,
+    devices: Arc<std::sync::Mutex<Vec<crate::virtio::mmio::VirtioMmioDevice>>>,
     
     // --- Snapshot ---
     /// Manages saving/restoring VM state (vCPU registers + memory).
@@ -133,6 +133,12 @@ impl VirtualMachine {
         
         // Step 2: Create a VM — this gives us an isolated address space in the kernel
         let vm_fd = kvm.create_vm().map_err(HypervisorError::KvmError)?;
+
+        // Enable in-kernel IRQCHIP (PIC/IOAPIC) and PIT Timer
+        vm_fd.create_irq_chip().map_err(HypervisorError::KvmError)?;
+        let mut pit = kvm_bindings::kvm_pit_config::default();
+        pit.flags = 0;
+        vm_fd.create_pit2(pit).map_err(HypervisorError::KvmError)?;
         
         // Step 3: Allocate guest physical memory and register it with KVM
         // This creates an mmap'd region on the host and tells KVM to map
@@ -161,7 +167,7 @@ impl VirtualMachine {
             vcpus,
             memory,
             kernel_loader: None,
-            devices: Vec::new(),
+            devices: Arc::new(std::sync::Mutex::new(Vec::new())),
             snapshot_manager,
             num_cpus,
             next_irq: 5,   // IRQs 0-4 are reserved for legacy devices
@@ -179,9 +185,24 @@ impl VirtualMachine {
         kernel_loader.load_kernel(
             &self.memory.memory, 
             kernel_path,
-            "console=hvc0 root=/dev/vda rw"
+            "console=hvc0 root=/dev/vda rw virtio_mmio.device=4K@0x1000:5 virtio_mmio.device=4K@0x2000:6 virtio_mmio.device=4K@0x3000:7 virtio_mmio.device=4K@0x4000:8"
         )?;
+        
+        let entry = kernel_loader.get_entry_point();
+        for vcpu in &self.vcpus {
+            vcpu.init(entry, 0x7000)?;
+        }
+        
         self.kernel_loader = Some(kernel_loader);
+        Ok(())
+    }
+
+    /// Loads a real mode bootloader from a binary file.
+    pub fn load_bootloader(&self, bootloader_path: &Path) -> Result<()> {
+        crate::bootloader::BiosLoader::load_bootloader(&self.memory.memory, bootloader_path)?;
+        for vcpu in &self.vcpus {
+            crate::bootloader::BiosLoader::init_vcpu_for_real_mode(vcpu)?;
+        }
         Ok(())
     }
 
@@ -209,7 +230,8 @@ impl VirtualMachine {
             irq,
             output
         )?;
-        self.devices.push(Box::new(console));
+        let wrapped = crate::virtio::mmio::VirtioMmioDevice::new(Box::new(console), 0x1000);
+        self.devices.lock().unwrap().push(wrapped);
         Ok(())
     }
 
@@ -226,7 +248,8 @@ impl VirtualMachine {
             &disk_path,
             read_only
         )?;
-        self.devices.push(Box::new(block));
+        let wrapped = crate::virtio::mmio::VirtioMmioDevice::new(Box::new(block), 0x2000);
+        self.devices.lock().unwrap().push(wrapped);
         Ok(())
     }
 
@@ -254,7 +277,8 @@ impl VirtualMachine {
             local_addr,
             None    // TODO: pass peer_addr for actual networking
         )?;
-        self.devices.push(Box::new(net));
+        let wrapped = crate::virtio::mmio::VirtioMmioDevice::new(Box::new(net), 0x3000);
+        self.devices.lock().unwrap().push(wrapped);
         Ok(())
     }
 
@@ -280,7 +304,8 @@ impl VirtualMachine {
             vm_memory::atomic::GuestMemoryAtomic::new(self.memory.memory.clone()),
             queue_evt,
         )?;
-        self.devices.push(Box::new(fs));
+        let wrapped = crate::virtio::mmio::VirtioMmioDevice::new(Box::new(fs), 0x4000);
+        self.devices.lock().unwrap().push(wrapped);
         Ok(())
     }
 
@@ -336,6 +361,7 @@ impl VirtualMachine {
                 let running = &self.running;
                 let message_rx = vcpu_rxs.remove(0); // Each thread gets its own receiver
                 
+                let devices = self.devices.clone();
                 s.spawn(move || {
                     let vcpu_id = i as u8;
                     info!("Starting VCPU {}", vcpu_id);
@@ -360,7 +386,28 @@ impl VirtualMachine {
                         
                         // Execute one guest instruction batch via KVM_RUN
                         match vcpu.run() {
-                            Ok(_) => continue,
+                            Ok(exit) => {
+                                match exit {
+                                    kvm_ioctls::VcpuExit::MmioRead(addr, data) => {
+                                        let mut devs = devices.lock().unwrap();
+                                        for dev in devs.iter_mut() {
+                                            if addr >= dev.base_addr && addr < dev.base_addr + dev.size {
+                                                let _ = dev.mmio_read(addr - dev.base_addr, data);
+                                            }
+                                        }
+                                    }
+                                    kvm_ioctls::VcpuExit::MmioWrite(addr, data) => {
+                                        let mut devs = devices.lock().unwrap();
+                                        for dev in devs.iter_mut() {
+                                            if addr >= dev.base_addr && addr < dev.base_addr + dev.size {
+                                                let _ = dev.mmio_write(addr - dev.base_addr, data);
+                                            }
+                                        }
+                                    }
+                                    _ => {} // Other exits handled in vcpu.run() or ignored
+                                }
+                                continue;
+                            }
                             Err(e) => {
                                 // Report error and signal other threads to stop
                                 let _ = error_tx.send(Some(e.to_string()));
@@ -457,9 +504,13 @@ impl Drop for VirtualMachine {
         }
         
         // Gracefully shut down all virtio devices
-        for device in &mut self.devices {
-            if let Err(e) = device.shutdown() {
-                error!("Failed to shutdown device: {}", e);
+        if let Ok(mut devs) = self.devices.lock() {
+            for wrapped in devs.iter_mut() {
+                if let Ok(mut dev) = wrapped.device.lock() {
+                    if let Err(e) = dev.shutdown() {
+                        error!("Failed to shutdown device: {}", e);
+                    }
+                }
             }
         }
     }

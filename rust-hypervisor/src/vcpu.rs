@@ -50,12 +50,13 @@ impl Vcpu {
     /// - **MSRs**: EFER (for SYSCALL support), STAR, LSTAR, CSTAR, SFMASK
     ///
     /// After this, the kernel loader will update RIP to the actual kernel entry point.
-    pub fn init(&self) -> Result<()> {
+    pub fn init(&self, entry_point: u64, boot_params: u64) -> Result<()> {
         // ----- General Purpose Registers -----
         let mut regs = self.fd.get_regs().map_err(HypervisorError::KvmError)?;
         
         regs.rflags = 0x2;     // Bit 1 is always set (x86 requirement)
-        regs.rip = 0x1000;     // Placeholder — kernel loader overwrites this
+        regs.rip = entry_point;
+        regs.rsi = boot_params;
         regs.rsp = 0x80000;    // Stack pointer (grows downward from here)
         regs.rbp = 0x80000;    // Base pointer = stack pointer initially
         
@@ -68,23 +69,51 @@ impl Vcpu {
         // Code Segment (CS):
         sregs.cs.selector = 0x8;       // GDT entry 1 (Ring 0 code)
         sregs.cs.base = 0;             // Flat model — base at 0
-        sregs.cs.limit = 0xFFFFF;      // 4GB limit with granularity=4KB
+        sregs.cs.limit = 0xFFFFFFFF;   // 4GB limit (KVM expects the expanded limit)
         sregs.cs.type_ = 0xB;          // Code, Execute/Read, Accessed
         sregs.cs.present = 1;          // Segment is present in memory
         sregs.cs.dpl = 0;              // Descriptor Privilege Level = Ring 0 (kernel)
-        sregs.cs.db = 1;               // 32-bit default operand size
+        sregs.cs.db = 1;               // 1 for 32-bit Protected Mode
         sregs.cs.s = 1;                // This is a code/data segment (not system)
-        sregs.cs.l = 0;                // Not 64-bit (would be 1 for long mode)
+        sregs.cs.l = 0;                // 0 for 32-bit Protected Mode
         sregs.cs.g = 1;                // Granularity: limit is in 4KB pages
         sregs.cs.avl = 0;              // Available for system software use
         
-        // Data segments: same as CS for flat model (all point to same 4GB space)
-        sregs.ds = sregs.cs;
-        sregs.es = sregs.cs;
-        sregs.fs = sregs.cs;
-        sregs.gs = sregs.cs;
-        sregs.ss = sregs.cs;
+        // Data segments: same as CS for flat model but requires Data type (Read/Write)
+        let mut data_seg = sregs.cs;
+        data_seg.selector = 0x10;      // GDT entry 2 (Ring 0 data)
+        data_seg.type_ = 3;            // Data, Read/Write, Accessed
+        data_seg.limit = 0xFFFFFFFF;
         
+        sregs.ds = data_seg;
+        sregs.es = data_seg;
+        sregs.fs = data_seg;
+        sregs.gs = data_seg;
+        sregs.ss = data_seg;
+        
+        sregs.cr3 = 0x0;               // Not needed yet
+        sregs.cr4 = 0x0;               // No PAE needed for simple 32-bit
+        sregs.cr0 = 0x11;              // PE (Protection Enable), ET
+        
+        // Task Register (TR) is required by VMX in protected mode
+        sregs.tr.base = 0;
+        sregs.tr.limit = 0xFFFF;
+        sregs.tr.selector = 0x18; // GDT entry 3
+        sregs.tr.type_ = 11;      // 32-bit TSS (busy)
+        sregs.tr.present = 1;
+        sregs.tr.dpl = 0;
+        sregs.tr.db = 0;
+        sregs.tr.s = 0;           // System segment
+        sregs.tr.l = 0;
+        sregs.tr.g = 0;
+        sregs.tr.avl = 0;
+
+        // Dummy GDT and IDT limits to satisfy KVM
+        sregs.gdt.base = 0x1000;
+        sregs.gdt.limit = 0xFFFF;
+        sregs.idt.base = 0x2000;
+        sregs.idt.limit = 0xFFFF;
+
         self.fd.set_sregs(&sregs).map_err(HypervisorError::KvmError)?;
         
         // ----- Floating Point Unit (FPU) -----
@@ -112,7 +141,7 @@ impl Vcpu {
     pub fn run(&self) -> Result<VcpuExit<'_>> {
         match self.fd.run().map_err(HypervisorError::KvmError)? {
             VcpuExit::IoIn(addr, data) => {
-                info!("I/O port read: 0x{:x}", addr);
+                // info!("I/O port read: 0x{:x}", addr);
                 // For now, return 0 for all port reads.
                 // In a real hypervisor, you'd dispatch to the appropriate device.
                 if let Some(first_byte) = data.first_mut() {
@@ -121,12 +150,21 @@ impl Vcpu {
                 Ok(VcpuExit::IoIn(addr, data))
             }
             VcpuExit::IoOut(addr, data) => {
-                info!("I/O port write: 0x{:x} = {:?}", addr, data);
+                if addr == 0x3F8 {
+                    use std::io::Write;
+                    let mut stdout = std::io::stdout();
+                    stdout.write_all(data).unwrap();
+                    stdout.flush().unwrap();
+                }
                 // TODO: Route to virtio devices or serial console
                 Ok(VcpuExit::IoOut(addr, data))
             }
             // Other exit reasons (Hlt, MmioRead, MmioWrite, Shutdown, etc.)
-            exit_reason => Ok(exit_reason),
+            exit_reason => {
+                let regs = self.fd.get_regs().map_err(HypervisorError::KvmError)?;
+                info!("Unhandled VcpuExit: {:?} at RIP: 0x{:x}", exit_reason, regs.rip);
+                Ok(exit_reason)
+            },
         }
     }
     
@@ -142,7 +180,7 @@ impl Vcpu {
         let msr_entries = [
             kvm_msr_entry {
                 index: 0xc0000080,      // EFER MSR
-                data: 0x501,            // SCE (bit 0) | LME (bit 8) | LMA (bit 10)
+                data: 0x1,              // SCE (bit 0) (NO Long mode LME for 32-bit)
                 ..Default::default()    // padding/reserved fields = 0
             },
             kvm_msr_entry {

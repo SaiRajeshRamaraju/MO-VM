@@ -61,6 +61,8 @@ pub mod memory;
 /// Virtual CPU management — register init, KVM_RUN loop, MSR setup.
 pub mod vcpu;
 
+pub mod bootloader;
+
 /// Virtio device implementations (block, console, net, filesystem).
 /// Contains the `VirtioDevice` trait and concrete implementations.
 #[allow(dead_code)]

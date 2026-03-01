@@ -75,6 +75,10 @@ struct Args {
     #[clap(long)]
     restore_state: Option<PathBuf>,
     
+    /// Path to a 16-bit bootloader
+    #[clap(long)]
+    bootloader: Option<PathBuf>,
+    
     /// Log verbosity level (error, warn, info, debug, trace)
     #[clap(long, default_value = "info")]
     log_level: String,
@@ -164,12 +168,17 @@ fn main() -> Result<()> {
         vm.restore_state(restore_path)?;
     }
     
-    // --- Step 6: Load the kernel ---
-    // Parses the ELF file, writes loadable segments to guest memory,
-    // and sets vCPU 0's instruction pointer to the kernel entry point.
+    // --- Step 6: Load the kernel and/or bootloader ---
     if let Err(e) = vm.load_kernel(&args.kernel) {
         error!("Failed to load kernel: {}", e);
         exit(1);
+    }
+    
+    if let Some(bootloader_path) = &args.bootloader {
+        if let Err(e) = vm.load_bootloader(bootloader_path) {
+            error!("Failed to load bootloader: {}", e);
+            exit(1);
+        }
     }
     
     // --- Step 7: Run the VM ---

@@ -1,0 +1,507 @@
+warning: unused import: `crate::virtio::VirtioDevice`
+  --> src/vm.rs:38:5
+   |
+38 | use crate::virtio::VirtioDevice;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `GuestMemory`
+  --> src/vm.rs:31:31
+   |
+31 | ...s, GuestMemory};
+   |       ^^^^^^^^^^^
+
+warning: variable does not need to be mutable
+  --> src/virtio/mmio.rs:24:13
+   |
+24 | ...et mut dev = sel...
+   |       ----^^^
+   |       |
+   |       help: remove this `mut`
+   |
+   = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: missing documentation for a module
+  --> src/lib.rs:64:1
+   |
+64 | pub mod bootloader;
+   | ^^^^^^^^^^^^^^^^^^
+   |
+note: the lint level is defined here
+  --> src/lib.rs:47:9
+   |
+47 | #![warn(missing_docs)]
+   |         ^^^^^^^^^^^^
+
+warning: missing documentation for a struct
+ --> src/kernel_loader.rs:9:1
+  |
+9 | pub struct KernelLoader {
+  | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+  --> src/kernel_loader.rs:15:5
+   |
+15 |     pub fn new() -> Self {
+   |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+  --> src/kernel_loader.rs:22:5
+   |
+22 | /     pub fn load_kernel...
+23 | |         &mut self,
+24 | |         memory: &M,
+25 | |         kernel_path: &...
+26 | |         cmdline: &str,
+27 | |     ) -> Result<()> {
+   | |___________________^
+
+warning: missing documentation for a method
+   --> src/kernel_loader.rs:152:5
+    |
+152 |     pub fn get_entry_point(&self) -> u64 {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+   --> src/kernel_loader.rs:156:5
+    |
+156 |     pub fn get_cmdline(&self) -> &str {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct
+ --> src/bootloader.rs:9:1
+  |
+9 | pub struct BiosLoader;
+  | ^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+  --> src/bootloader.rs:12:5
+   |
+12 |     pu...> Result<()> {
+   |     ^^...^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+  --> src/bootloader.rs:29:5
+   |
+29 |     pu...> Result<()> {
+   |     ^^...^^^^^^^^^^^^
+
+warning: missing documentation for a struct
+  --> src/virtio/block.rs:73:1
+   |
+73 | pub struct VirtioBlock {
+   | ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+  --> src/virtio/block.rs:82:5
+   |
+82 | /     pub fn new(
+83 | |         mem: GuestMemory...
+84 | |         guest_mem: Guest...
+85 | |         irq: u32,
+86 | |         disk_path: &Path,
+87 | |         read_only: bool,
+88 | |     ) -> Result<Self> {
+   | |_____________________^
+
+warning: missing documentation for a struct
+  --> src/virtio/fs.rs:23:1
+   |
+23 | / bitflags! {
+24 | |     #[derive(Defa...
+25 | |     pub struct Ac...
+26 | |         const REA...
+...  |
+31 | | }
+   | |_^
+   |
+   = note: this warning originates in the macro `$crate::__declare_public_bitflags` which comes from the expansion of the macro `bitflags` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: missing documentation for an associated constant
+  --> src/virtio/fs.rs:23:1
+   |
+23 | / bitflags! {
+24 | |     #[derive(Defa...
+25 | |     pub struct Ac...
+26 | |         const REA...
+...  |
+31 | | }
+   | |_^
+   |
+   = note: this warning originates in the macro `$crate::__impl_public_bitflags_consts` which comes from the expansion of the macro `bitflags` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: missing documentation for a struct
+  --> src/virtio/fs.rs:64:1
+   |
+64 | pub struct AclEntry {
+   | ^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> src/virtio/fs.rs:65:5
+   |
+65 |     pub uid: u32,
+   |     ^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> src/virtio/fs.rs:66:5
+   |
+66 |     pub gid: u32,
+   |     ^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> src/virtio/fs.rs:67:5
+   |
+67 |     pub permissions: AclPermissions,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct
+  --> src/virtio/fs.rs:71:1
+   |
+71 | pub struct Acl {
+   | ^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> src/virtio/fs.rs:72:5
+   |
+72 |     pub owner: u32,
+   |     ^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> src/virtio/fs.rs:73:5
+   |
+73 |     pub group: u32,
+   |     ^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> src/virtio/fs.rs:74:5
+   |
+74 |     pub entries: Vec<AclEntry>,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+  --> src/virtio/fs.rs:88:5
+   |
+88 |     pu...ons) -> bool {
+   |     ^^...^^^^^^^^^^^^
+
+warning: missing documentation for a struct
+   --> src/virtio/fs.rs:109:1
+    |
+109 | pub struct FsState {
+    | ^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> src/virtio/fs.rs:117:5
+    |
+117 |     p... Result<Self> {
+    |     ^...^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+   --> src/virtio/fs.rs:157:5
+    |
+157 |     p...-> Result<()> {
+    |     ^...^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+   --> src/virtio/fs.rs:163:5
+    |
+163 |     p...> Option<Acl> {
+    |     ^...^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+   --> src/virtio/fs.rs:168:5
+    |
+168 |     p...-> Result<()> {
+    |     ^...^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+   --> src/virtio/fs.rs:180:5
+    |
+180 |     p...-> Result<()> {
+    |     ^...^^^^^^^^^^^^^
+
+warning: missing documentation for a struct
+   --> src/virtio/fs.rs:207:1
+    |
+207 | pub struct VirtioFs {
+    | ^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> src/virtio/fs.rs:218:5
+    |
+218 |     p... Result<Self> {
+    |     ^...^^^^^^^^^^^^^
+
+warning: missing documentation for an enum
+   --> src/virtio/fs.rs:364:1
+    |
+364 | pub enum Error {
+    | ^^^^^^^^^^^^^^
+
+warning: missing documentation for a variant
+   --> src/virtio/fs.rs:366:5
+    |
+366 |     Io(#[from] std...
+    |     ^^
+
+warning: missing documentation for a variant
+   --> src/virtio/fs.rs:369:5
+    |
+369 |     InvalidMessage,
+    |     ^^^^^^^^^^^^^^
+
+warning: missing documentation for a variant
+   --> src/virtio/fs.rs:372:5
+    |
+372 |     UnsupportedOperation,
+    |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a variant
+   --> src/virtio/fs.rs:375:5
+    |
+375 |     PermissionDenied,
+    |     ^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a variant
+   --> src/virtio/fs.rs:378:5
+    |
+378 |     InvalidOffset,
+    |     ^^^^^^^^^^^^^
+
+warning: missing documentation for a variant
+   --> src/virtio/fs.rs:381:5
+    |
+381 |     EventFd(std::i...
+    |     ^^^^^^^
+
+warning: missing documentation for a struct
+  --> src/virtio/net.rs:30:1
+   |
+30 | pub struct VirtioNet {
+   | ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+  --> src/virtio/net.rs:38:5
+   |
+38 | /     pub fn new(
+39 | |         mem: GuestMemory...
+40 | |         guest_mem: Guest...
+41 | |         irq: u32,
+42 | |         local_addr: &str,
+43 | |         peer_addr: Optio...
+44 | |     ) -> Result<Self> {
+   | |_____________________^
+
+warning: missing documentation for a struct
+ --> src/virtio/mmio.rs:6:1
+  |
+6 | pub struct VirtioMmioDevice {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+ --> src/virtio/mmio.rs:7:5
+  |
+7 |     pub...orError>>>>,
+  |     ^^^...^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+ --> src/virtio/mmio.rs:8:5
+  |
+8 |     pub base_addr: u64,
+  |     ^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+ --> src/virtio/mmio.rs:9:5
+  |
+9 |     pub size: u64,
+  |     ^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+  --> src/virtio/mmio.rs:14:5
+   |
+14 |     pu...u64) -> Self {
+   |     ^^...^^^^^^^^^^^^
+
+warning: missing documentation for a method
+  --> src/virtio/mmio.rs:23:5
+   |
+23 |     pu...> Result<()> {
+   |     ^^...^^^^^^^^^^^^
+
+warning: missing documentation for a method
+  --> src/virtio/mmio.rs:57:5
+   |
+57 |     pu...> Result<()> {
+   |     ^^...^^^^^^^^^^^^
+
+warning: missing documentation for a struct
+   --> src/snapshot.rs:293:1
+    |
+293 | pub struct VmState {
+    | ^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> src/snapshot.rs:294:5
+    |
+294 |     pub memory_regions: Vec<MemoryRegion>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> src/snapshot.rs:295:5
+    |
+295 |     pub vcpu_states: Vec<VcpuState>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> src/snapshot.rs:296:5
+    |
+296 |     pub device_states: Vec<DeviceState>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct
+   --> src/snapshot.rs:390:1
+    |
+390 | pub struct MemoryRegion {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> src/snapshot.rs:391:5
+    |
+391 |     pub guest_addr: u64,
+    |     ^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> src/snapshot.rs:392:5
+    |
+392 |     pub size: usize,
+    |     ^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> src/snapshot.rs:393:5
+    |
+393 |     pub data: Vec<u8>,
+    |     ^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct
+   --> src/snapshot.rs:482:1
+    |
+482 | pub struct DeviceState {
+    | ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> src/snapshot.rs:483:5
+    |
+483 |     pub device_type: String,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> src/snapshot.rs:484:5
+    |
+484 |     pub state: Vec<u8>,
+    |     ^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct
+   --> src/snapshot.rs:563:1
+    |
+563 | pub struct VcpuState {
+    | ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> src/snapshot.rs:564:5
+    |
+564 |     pub id: u32,
+    |     ^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> src/snapshot.rs:565:5
+    |
+565 |     pub regs: kvm_bindings::kvm_regs,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> src/snapshot.rs:566:5
+    |
+566 |     pub sregs: kvm_bindings::kvm_sregs,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> src/snapshot.rs:567:5
+    |
+567 |     pub fpu: kvm_bindings::kvm_fpu,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> src/snapshot.rs:568:5
+    |
+568 |     pub msrs: Vec<kvm_bindings::kvm_msr_entry>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct
+   --> src/snapshot.rs:811:1
+    |
+811 | pub struct SnapshotManager {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> src/snapshot.rs:817:5
+    |
+817 |     p...VmFd) -> Self {
+    |     ^...^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+   --> src/snapshot.rs:821:5
+    |
+821 |     p...sult<VmState> {
+    |     ^...^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+   --> src/snapshot.rs:843:5
+    |
+843 |     p...-> Result<()> {
+    |     ^...^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+   --> src/snapshot.rs:976:5
+    |
+976 |     p...-> Result<()> {
+    |     ^...^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+   --> src/snapshot.rs:984:5
+    |
+984 | /     pub fn load_from_f...
+985 | |         &self,
+986 | |         path: &Path,
+987 | |         vcpus: &mut [c...
+988 | |     ) -> Result<()> {
+    | |___________________^
+
+warning: `rust-hypervisor` (lib) generated 75 warnings (3 duplicates) (run `cargo fix --lib -p rust-hypervisor` to apply 1 suggestion)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.05s
+     Running `target/debug/rust-hypervisor --kernel /home/rajesh/Documents/MOKernel/code/kernel.bin`
+10:54:04 [0m[34m[INFO] [0m=== Rust Hypervisor ===
+10:54:04 [0m[34m[INFO] [0mKernel:  "/home/rajesh/Documents/MOKernel/code/kernel.bin"
+10:54:04 [0m[34m[INFO] [0mvCPUs:   1
+10:54:04 [0m[34m[INFO] [0mMemory:  128MB
+10:54:04 [0m[34m[INFO] [0mRegistered memory region slot=0: guest_addr=0x0, size=128MB, host_addr=0x76213aa00000
+10:54:04 [0m[34m[INFO] [0mInitialized guest memory: 128MB total
+10:54:04 [0m[34m[INFO] [0mLoading kernel from "/home/rajesh/Documents/MOKernel/code/kernel.bin"
+10:54:04 [0m[34m[INFO] [0mLoaded segment: guest addr 0x100000 - 0x102a98 (10904 bytes)
+10:54:04 [0m[34m[INFO] [0mLoaded segment: guest addr 0x103000 - 0x20a310 (0 bytes)
+10:54:04 [0m[34m[INFO] [0mKernel loaded. Entry point: 0x10098c
+10:54:04 [0m[34m[INFO] [0mFirst bytes at entry point: [250, 188, 0, 80, 16, 0, 102, 186, 248, 3, 176, 88, 238, 232, 172, 19]
+10:54:04 [0m[34m[INFO] [0mStarting VM execution...
+10:54:04 [0m[34m[INFO] [0mStarting VM...
+10:54:04 [0m[34m[INFO] [0mStarting VCPU 0
+XA
+Booting MOKernel...
+Initializing Paging...
+Initializing PIT Timer...
+Initializing PS/2 Mouse...
+Initializing IDT...
+10:54:05 [0m[34m[INFO] [0mUnhandled VcpuExit: Shutdown at RIP: 0x101d41
+Initializing File System...
+
+Kernel initialization complete!
+OS> 

@@ -1,27 +1,3 @@
-// =============================================================================
-// kernel_loader.rs — ELF Kernel Loader
-// =============================================================================
-//
-// This module loads a Linux kernel in ELF format into guest physical memory.
-//
-// HOW IT WORKS:
-//   1. Read the kernel file from disk into a buffer
-//   2. Parse the ELF headers using the `goblin` crate
-//   3. For each PT_LOAD segment (i.e., segments that should be loaded into RAM):
-//      - Calculate the guest physical address from the ELF program header (p_paddr)
-//      - Copy the segment data from the file into guest memory at that address
-//   4. Record the ELF entry point (where execution begins)
-//
-// The entry point is then used by vm.rs to set vCPU 0's RIP register.
-// NOTE: This is a simplified loader. A hypervisor would also:
-//   - Set up boot parameters (struct boot_params / zero page)
-//   - Write the kernel command line to a known guest address
-//   - Set up an initial page table for long mode
-//   - Handle bzImage format (compressed kernels), not just raw ELF
-// WARNING:
-//  - This is future me problem to implement these
-// =============================================================================
-
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
@@ -30,46 +6,12 @@ use vm_memory::{Bytes, GuestAddress, GuestMemory};
 use goblin::elf::Elf;
 use crate::error::{HypervisorError, Result};
 
-// Linux kernel header magic. Not currently used for bzImage detection,
-// but kept here for reference if bzImage support is added later.
-const LINUX_MAGIC: u32 = 0x5372_6446;
-
-// Simplified Linux boot header structure.
-// In a real bootloader, this would be the zero page (boot_params) at address 0x7000.
-// Currently unused — kept as documentation of the Linux boot protocol.
-#[repr(C, packed)]
-struct BootParams {
-    hdr: LinuxHeader,
-    // The full boot_params struct has ~200 more fields (e820 map, etc.)
-}
-
-#[repr(C, packed)]
-struct LinuxHeader {
-    magic: u32,                         // Should be 0x53726446 ("HdrS")
-    hdr_size: u32,                      // Size of this header
-    kernel_version: u32,                // Kernel version number
-    load_flags: u32,                    // Boot protocol flags
-    kernel_alignment: u32,              // Required physical alignment
-    cmdline_size: u32,                  // Max command line length
-    cmd_line_ptr: u32,                  // Physical address of command line string
-    initrd_addr_max: u32,               // Max address for initial ramdisk
-    kernel_alignment_offset: u32,       // Alignment offset for relocation
-    // ... many more fields in the real header
-}
-
-/// Loads a Linux kernel (ELF format) into guest memory.
-///
-/// After loading, call `get_entry_point()` to get the address where
-/// the guest should start executing.
 pub struct KernelLoader {
-    /// The ELF entry point address (set after load_kernel succeeds)
     entry_point: u64,
-    /// The kernel command line string (passed to the kernel via boot params)
     cmdline: String,
 }
 
 impl KernelLoader {
-    /// Creates a new, uninitialized kernel loader.
     pub fn new() -> Self {
         Self {
             entry_point: 0,
@@ -77,21 +19,6 @@ impl KernelLoader {
         }
     }
 
-    /// Loads an ELF kernel from `kernel_path` into `memory`.
-    ///
-    /// # Arguments
-    /// - `memory`: Guest physical memory to write segments into
-    /// - `kernel_path`: Path to the kernel ELF file on the host
-    /// - `cmdline`: Kernel command line (e.g., "console=hvc0 root=/dev/vda rw")
-    ///
-    /// # How ELF Loading Works
-    /// An ELF file contains "program headers" that describe segments:
-    /// - `PT_LOAD` segments are the code/data that should be loaded into RAM
-    /// - `p_paddr` is the physical address where the segment should go
-    /// - `p_offset` / `p_filesz` is the offset and size within the ELF file
-    /// - `p_memsz` may be larger than `p_filesz` (BSS segment — zero-filled)
-    ///
-    /// We copy each PT_LOAD segment from the file into guest memory.
     pub fn load_kernel<M: GuestMemory>(
         &mut self,
         memory: &M,
@@ -100,7 +27,6 @@ impl KernelLoader {
     ) -> Result<()> {
         info!("Loading kernel from {:?}", kernel_path);
         
-        // Read the entire kernel file into memory
         let mut file = File::open(kernel_path)
             .map_err(|e| HypervisorError::IoError(e))?;
         
@@ -108,26 +34,21 @@ impl KernelLoader {
         file.read_to_end(&mut buffer)
             .map_err(|e| HypervisorError::IoError(e))?;
         
-        // Parse the ELF headers
         let elf = Elf::parse(&buffer)
             .map_err(|_| HypervisorError::MemoryError("Invalid ELF format".to_string()))?;
         
-        // Load each PT_LOAD segment into guest memory
         for phdr in &elf.program_headers {
-            // Only process loadable segments
             if phdr.p_type == goblin::elf::program_header::PT_LOAD {
-                let mem_start = phdr.p_paddr as u64;       // Guest physical address
-                let file_start = phdr.p_offset as usize;   // Offset in ELF file
+                let mem_start = phdr.p_paddr as u64;
+                let file_start = phdr.p_offset as usize;
                 let file_end = (phdr.p_offset + phdr.p_filesz) as usize;
                 
-                // Sanity check: segment data must not extend past end of file
                 if file_end > buffer.len() {
                     return Err(HypervisorError::MemoryError(
                         "Invalid ELF segment: extends past end of file".to_string(),
                     ));
                 }
                 
-                // Write the segment bytes from the ELF file into guest RAM
                 memory
                     .write_slice(
                         &buffer[file_start..file_end],
@@ -149,21 +70,89 @@ impl KernelLoader {
             }
         }
         
-        // Save the entry point — this is where the CPU should jump to
         self.entry_point = elf.entry as u64;
         self.cmdline = cmdline.to_string();
         
+        // --- Virtual Memory (Page Tables for 4GB Identity Map) ---
+        let page_table_base = 0x9000;
+        let pml4_addr = GuestAddress(page_table_base);
+        let pdpte_addr = GuestAddress(page_table_base + 0x1000);
+        let pde_addr = GuestAddress(page_table_base + 0x2000);
+        
+        // Zero 6 pages (24 KB)
+        memory.write_slice(&vec![0u8; 0x6000], pml4_addr)
+            .map_err(|_| HypervisorError::MemoryError("Failed to zero page tables".to_string()))?;
+
+        // 1. PML4 entry 0 points to PDPTE (Flags: Present | RW = 0x3)
+        let pml4_entry = (pdpte_addr.0 | 0x3) as u64;
+        let mut pml4_bytes = [0u8; 8];
+        pml4_bytes.copy_from_slice(&pml4_entry.to_le_bytes());
+        memory.write_slice(&pml4_bytes, pml4_addr).map_err(|_| HypervisorError::MemoryError("PML4 write failed".to_string()))?;
+
+        // 2. PDPTE entries 0..3 point to 4 PDE pages
+        for i in 0..4 {
+            let pde_page = pde_addr.0 + (i as u64 * 0x1000);
+            let pdpte_entry = (pde_page | 0x3) as u64;
+            let mut pdpte_bytes = [0u8; 8];
+            pdpte_bytes.copy_from_slice(&pdpte_entry.to_le_bytes());
+            
+            let addr = GuestAddress(pdpte_addr.0 + i as u64 * 8);
+            memory.write_slice(&pdpte_bytes, addr).map_err(|_| HypervisorError::MemoryError("PDPTE write failed".to_string()))?;
+        }
+
+        // 3. PDEs: 4 pages * 512 entries = 2048 entries mapping 4GB using 2MB pages
+        // Flags: Present | RW | Huge (0x80) -> 0x83
+        for i in 0..2048 {
+            let phys_addr = i as u64 * 0x200000;
+            let pde_entry = (phys_addr | 0x83) as u64;
+            let mut pde_bytes = [0u8; 8];
+            pde_bytes.copy_from_slice(&pde_entry.to_le_bytes());
+            
+            let addr = GuestAddress(pde_addr.0 + i as u64 * 8);
+            memory.write_slice(&pde_bytes, addr).map_err(|_| HypervisorError::MemoryError("PDE write failed".to_string()))?;
+        }
+        
+        // --- Boot Params & Cmdline ---
+        let cmdline_addr = 0x10000u64;
+        let mut cmdline_cstr = cmdline.to_string();
+        cmdline_cstr.push('\0');
+        memory.write_slice(cmdline_cstr.as_bytes(), GuestAddress(cmdline_addr))
+            .map_err(|_| HypervisorError::MemoryError("Failed to write cmdline".to_string()))?;
+            
+        let mut boot_params = vec![0u8; 4096];
+        boot_params[0x210] = 0xFF; // type_of_loader
+        let cmd_ptr = (cmdline_addr as u32).to_le_bytes();
+        boot_params[0x228..0x22c].copy_from_slice(&cmd_ptr);
+        
+        // minimal e820 map: RAM from 0 to 4GB
+        let e820_entries: u8 = 1;
+        boot_params[0x1e8] = e820_entries;
+        // Entry 0 at 0x2d0
+        // addr (8), size (8), type (4)
+        let map_addr = 0u64.to_le_bytes();
+        boot_params[0x2d0..0x2d8].copy_from_slice(&map_addr);
+        let map_size = 0x8000000u64.to_le_bytes(); // 128MB matching MEMORY_SIZE in memory.rs
+        boot_params[0x2d8..0x2e0].copy_from_slice(&map_size);
+        let map_type = 1u32.to_le_bytes(); // E820_RAM
+        boot_params[0x2e0..0x2e4].copy_from_slice(&map_type);
+        
+        let boot_params_addr = 0x7000u64;
+        memory.write_slice(&boot_params, GuestAddress(boot_params_addr))
+            .map_err(|_| HypervisorError::MemoryError("Failed to write boot params".to_string()))?;
+            
         info!("Kernel loaded. Entry point: 0x{:x}", self.entry_point);
+        
+        let mut first_bytes = vec![0u8; 16];
+        memory.read_slice(&mut first_bytes, GuestAddress(self.entry_point)).unwrap();
+        info!("First bytes at entry point: {:?}", first_bytes);
         
         Ok(())
     }
     
-    /// Returns the kernel entry point (the address where RIP should be set).
     pub fn get_entry_point(&self) -> u64 {
         self.entry_point
     }
     
-    /// Returns the kernel command line string.
     pub fn get_cmdline(&self) -> &str {
         &self.cmdline
     }
