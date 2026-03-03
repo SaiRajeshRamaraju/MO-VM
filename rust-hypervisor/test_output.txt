@@ -9,16 +9,16 @@ warning: unused import: `crate::virtio::VirtioDevice`
 warning: unused import: `GuestMemory`
   --> src/vm.rs:31:31
    |
-31 | ...s, GuestMemory};
-   |       ^^^^^^^^^^^
+31 | use vm_memory::{GuestAddress, GuestMemory};
+   |                               ^^^^^^^^^^^
 
 warning: variable does not need to be mutable
   --> src/virtio/mmio.rs:24:13
    |
-24 | ...et mut dev = sel...
-   |       ----^^^
-   |       |
-   |       help: remove this `mut`
+24 |         let mut dev = self.device.lock().unwrap();
+   |             ----^^^
+   |             |
+   |             help: remove this `mut`
    |
    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
 
@@ -49,10 +49,10 @@ warning: missing documentation for an associated function
 warning: missing documentation for a method
   --> src/kernel_loader.rs:22:5
    |
-22 | /     pub fn load_kernel...
+22 | /     pub fn load_kernel<M: GuestMemory>(
 23 | |         &mut self,
 24 | |         memory: &M,
-25 | |         kernel_path: &...
+25 | |         kernel_path: &Path,
 26 | |         cmdline: &str,
 27 | |     ) -> Result<()> {
    | |___________________^
@@ -78,14 +78,14 @@ warning: missing documentation for a struct
 warning: missing documentation for an associated function
   --> src/bootloader.rs:12:5
    |
-12 |     pu...> Result<()> {
-   |     ^^...^^^^^^^^^^^^
+12 |     pub fn load_bootloader<M: GuestMemory>(memory: &M, boot_path: &Path) -> Result<()> {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 warning: missing documentation for an associated function
-  --> src/bootloader.rs:29:5
+  --> src/bootloader.rs:67:5
    |
-29 |     pu...> Result<()> {
-   |     ^^...^^^^^^^^^^^^
+67 |     pub fn init_vcpu_for_real_mode(vcpu: &Vcpu) -> Result<()> {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 warning: missing documentation for a struct
   --> src/virtio/block.rs:73:1
@@ -97,8 +97,8 @@ warning: missing documentation for an associated function
   --> src/virtio/block.rs:82:5
    |
 82 | /     pub fn new(
-83 | |         mem: GuestMemory...
-84 | |         guest_mem: Guest...
+83 | |         mem: GuestMemoryMmap,
+84 | |         guest_mem: GuestAddress,
 85 | |         irq: u32,
 86 | |         disk_path: &Path,
 87 | |         read_only: bool,
@@ -109,9 +109,9 @@ warning: missing documentation for a struct
   --> src/virtio/fs.rs:23:1
    |
 23 | / bitflags! {
-24 | |     #[derive(Defa...
-25 | |     pub struct Ac...
-26 | |         const REA...
+24 | |     #[derive(Default, Clone, Copy, PartialEq, Eq)]
+25 | |     pub struct AclPermissions: u32 {
+26 | |         const READ = 0b0001;
 ...  |
 31 | | }
    | |_^
@@ -122,9 +122,9 @@ warning: missing documentation for an associated constant
   --> src/virtio/fs.rs:23:1
    |
 23 | / bitflags! {
-24 | |     #[derive(Defa...
-25 | |     pub struct Ac...
-26 | |         const REA...
+24 | |     #[derive(Default, Clone, Copy, PartialEq, Eq)]
+25 | |     pub struct AclPermissions: u32 {
+26 | |         const READ = 0b0001;
 ...  |
 31 | | }
    | |_^
@@ -182,8 +182,8 @@ warning: missing documentation for a struct field
 warning: missing documentation for a method
   --> src/virtio/fs.rs:88:5
    |
-88 |     pu...ons) -> bool {
-   |     ^^...^^^^^^^^^^^^
+88 |     pub fn check_permission(&self, uid: u32, gid: u32, required: AclPermissions) -> bool {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 warning: missing documentation for a struct
    --> src/virtio/fs.rs:109:1
@@ -194,32 +194,32 @@ warning: missing documentation for a struct
 warning: missing documentation for an associated function
    --> src/virtio/fs.rs:117:5
     |
-117 |     p... Result<Self> {
-    |     ^...^^^^^^^^^^^^^
+117 |     pub fn new(root: &Path, mmio_region: Option<(u64, u64)>) -> Result<Self> {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 warning: missing documentation for a method
    --> src/virtio/fs.rs:157:5
     |
-157 |     p...-> Result<()> {
-    |     ^...^^^^^^^^^^^^^
+157 |     pub fn set_acl(&self, path: &Path, acl: Acl) -> Result<()> {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 warning: missing documentation for a method
    --> src/virtio/fs.rs:163:5
     |
-163 |     p...> Option<Acl> {
-    |     ^...^^^^^^^^^^^^^
+163 |     pub fn get_acl(&self, path: &Path) -> Option<Acl> {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 warning: missing documentation for a method
    --> src/virtio/fs.rs:168:5
     |
-168 |     p...-> Result<()> {
-    |     ^...^^^^^^^^^^^^^
+168 |     pub fn mmio_read(&self, offset: u64, data: &mut [u8]) -> Result<()> {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 warning: missing documentation for a method
    --> src/virtio/fs.rs:180:5
     |
-180 |     p...-> Result<()> {
-    |     ^...^^^^^^^^^^^^^
+180 |     pub fn mmio_write(&self, offset: u64, data: &[u8]) -> Result<()> {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 warning: missing documentation for a struct
    --> src/virtio/fs.rs:207:1
@@ -230,8 +230,8 @@ warning: missing documentation for a struct
 warning: missing documentation for an associated function
    --> src/virtio/fs.rs:218:5
     |
-218 |     p... Result<Self> {
-    |     ^...^^^^^^^^^^^^^
+218 |     pub fn new(root: &Path, mem: vm_memory::atomic::GuestMemoryAtomic<vm_memory::mmap::GuestMemoryMmap>, irq_trigger: EventFd) -> Result<Self> {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 warning: missing documentation for an enum
    --> src/virtio/fs.rs:364:1
@@ -242,7 +242,7 @@ warning: missing documentation for an enum
 warning: missing documentation for a variant
    --> src/virtio/fs.rs:366:5
     |
-366 |     Io(#[from] std...
+366 |     Io(#[from] std::io::Error),
     |     ^^
 
 warning: missing documentation for a variant
@@ -272,7 +272,7 @@ warning: missing documentation for a variant
 warning: missing documentation for a variant
    --> src/virtio/fs.rs:381:5
     |
-381 |     EventFd(std::i...
+381 |     EventFd(std::io::Error),
     |     ^^^^^^^
 
 warning: missing documentation for a struct
@@ -285,11 +285,11 @@ warning: missing documentation for an associated function
   --> src/virtio/net.rs:38:5
    |
 38 | /     pub fn new(
-39 | |         mem: GuestMemory...
-40 | |         guest_mem: Guest...
+39 | |         mem: GuestMemoryMmap,
+40 | |         guest_mem: GuestAddress,
 41 | |         irq: u32,
 42 | |         local_addr: &str,
-43 | |         peer_addr: Optio...
+43 | |         peer_addr: Option<&str>,
 44 | |     ) -> Result<Self> {
    | |_____________________^
 
@@ -302,8 +302,8 @@ warning: missing documentation for a struct
 warning: missing documentation for a struct field
  --> src/virtio/mmio.rs:7:5
   |
-7 |     pub...orError>>>>,
-  |     ^^^...^^^^^^^^^^^
+7 |     pub device: Arc<Mutex<Box<dyn VirtioDevice<Error = HypervisorError>>>>,
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 warning: missing documentation for a struct field
  --> src/virtio/mmio.rs:8:5
@@ -320,20 +320,20 @@ warning: missing documentation for a struct field
 warning: missing documentation for an associated function
   --> src/virtio/mmio.rs:14:5
    |
-14 |     pu...u64) -> Self {
-   |     ^^...^^^^^^^^^^^^
+14 |     pub fn new(device: Box<dyn VirtioDevice<Error = HypervisorError>>, base_addr: u64) -> Self {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 warning: missing documentation for a method
   --> src/virtio/mmio.rs:23:5
    |
-23 |     pu...> Result<()> {
-   |     ^^...^^^^^^^^^^^^
+23 |     pub fn mmio_read(&mut self, offset: u64, data: &mut [u8]) -> Result<()> {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 warning: missing documentation for a method
   --> src/virtio/mmio.rs:57:5
    |
-57 |     pu...> Result<()> {
-   |     ^^...^^^^^^^^^^^^
+57 |     pub fn mmio_write(&mut self, offset: u64, data: &[u8]) -> Result<()> {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 warning: missing documentation for a struct
    --> src/snapshot.rs:293:1
@@ -446,61 +446,61 @@ warning: missing documentation for a struct
 warning: missing documentation for an associated function
    --> src/snapshot.rs:817:5
     |
-817 |     p...VmFd) -> Self {
-    |     ^...^^^^^^^^^^^^^
+817 |     pub fn new(memory: Arc<GuestMemoryMmap>, vm_fd: VmFd) -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 warning: missing documentation for a method
    --> src/snapshot.rs:821:5
     |
-821 |     p...sult<VmState> {
-    |     ^...^^^^^^^^^^^^^
+821 |     pub fn create_snapshot(&self, vcpus: &[crate::vcpu::Vcpu]) -> Result<VmState> {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 warning: missing documentation for a method
    --> src/snapshot.rs:843:5
     |
-843 |     p...-> Result<()> {
-    |     ^...^^^^^^^^^^^^^
+843 |     pub fn restore_snapshot(&self, state: &VmState, vcpus: &mut [crate::vcpu::Vcpu]) -> Result<()> {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 warning: missing documentation for a method
    --> src/snapshot.rs:976:5
     |
-976 |     p...-> Result<()> {
-    |     ^...^^^^^^^^^^^^^
+976 |     pub fn save_to_file(&self, path: &Path, vcpus: &[crate::vcpu::Vcpu]) -> Result<()> {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 warning: missing documentation for a method
    --> src/snapshot.rs:984:5
     |
-984 | /     pub fn load_from_f...
+984 | /     pub fn load_from_file(
 985 | |         &self,
 986 | |         path: &Path,
-987 | |         vcpus: &mut [c...
+987 | |         vcpus: &mut [crate::vcpu::Vcpu],
 988 | |     ) -> Result<()> {
     | |___________________^
 
 warning: `rust-hypervisor` (lib) generated 75 warnings (3 duplicates) (run `cargo fix --lib -p rust-hypervisor` to apply 1 suggestion)
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.05s
-     Running `target/debug/rust-hypervisor --kernel /home/rajesh/Documents/MOKernel/code/kernel.bin`
-10:54:04 [0m[34m[INFO] [0m=== Rust Hypervisor ===
-10:54:04 [0m[34m[INFO] [0mKernel:  "/home/rajesh/Documents/MOKernel/code/kernel.bin"
-10:54:04 [0m[34m[INFO] [0mvCPUs:   1
-10:54:04 [0m[34m[INFO] [0mMemory:  128MB
-10:54:04 [0m[34m[INFO] [0mRegistered memory region slot=0: guest_addr=0x0, size=128MB, host_addr=0x76213aa00000
-10:54:04 [0m[34m[INFO] [0mInitialized guest memory: 128MB total
-10:54:04 [0m[34m[INFO] [0mLoading kernel from "/home/rajesh/Documents/MOKernel/code/kernel.bin"
-10:54:04 [0m[34m[INFO] [0mLoaded segment: guest addr 0x100000 - 0x102a98 (10904 bytes)
-10:54:04 [0m[34m[INFO] [0mLoaded segment: guest addr 0x103000 - 0x20a310 (0 bytes)
-10:54:04 [0m[34m[INFO] [0mKernel loaded. Entry point: 0x10098c
-10:54:04 [0m[34m[INFO] [0mFirst bytes at entry point: [250, 188, 0, 80, 16, 0, 102, 186, 248, 3, 176, 88, 238, 232, 172, 19]
-10:54:04 [0m[34m[INFO] [0mStarting VM execution...
-10:54:04 [0m[34m[INFO] [0mStarting VM...
-10:54:04 [0m[34m[INFO] [0mStarting VCPU 0
-XA
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.19s
+     Running `target/debug/rust-hypervisor --bootloader /home/rajesh/Documents/Bootloader/boot.com --kernel /home/rajesh/Documents/MOKernel/code/kernel.bin`
+09:13:44 [INFO] === Rust Hypervisor ===
+09:13:44 [INFO] Kernel:  "/home/rajesh/Documents/MOKernel/code/kernel.bin"
+09:13:44 [INFO] vCPUs:   1
+09:13:44 [INFO] Memory:  128MB
+09:13:44 [INFO] Registered memory region slot=0: guest_addr=0x0, size=128MB, host_addr=0x701040c00000
+09:13:44 [INFO] Initialized guest memory: 128MB total
+09:13:44 [INFO] Loading kernel from "/home/rajesh/Documents/MOKernel/code/kernel.bin"
+09:13:44 [INFO] Loaded segment: guest addr 0x100000 - 0x102a98 (10904 bytes)
+09:13:44 [INFO] Loaded segment: guest addr 0x103000 - 0x20a310 (0 bytes)
+09:13:44 [INFO] Kernel loaded. Entry point: 0x10099c
+09:13:44 [INFO] First bytes at entry point: [250, 188, 0, 80, 16, 0, 102, 186, 248, 3, 176, 88, 238, 232, 172, 19]
+09:13:44 [INFO] Loading bootloader from "/home/rajesh/Documents/Bootloader/boot.com"
+09:13:44 [INFO] Starting VM execution...
+09:13:44 [INFO] Starting VM...
+09:13:44 [INFO] Starting VCPU 0
+ABXA
 Booting MOKernel...
 Initializing Paging...
 Initializing PIT Timer...
 Initializing PS/2 Mouse...
 Initializing IDT...
-10:54:05 [0m[34m[INFO] [0mUnhandled VcpuExit: Shutdown at RIP: 0x101d41
 Initializing File System...
 
 Kernel initialization complete!
